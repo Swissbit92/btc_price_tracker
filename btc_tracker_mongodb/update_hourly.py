@@ -2,23 +2,22 @@
 """
 update_hourly.py
 
-Incremental hourly update:
+Incremental hourly update via KuCoin:
 1) Load the last 200 hours of price data from MongoDB.
-2) Fetch the latest 1h BTC/USDT candle via Binance API.
+2) Fetch the latest 1h BTC-USDT candle via KuCoin public API.
 3) Append to the price window (now 201 rows).
 4) Compute all indicators over that window using `ta`.
 5) Upsert only the new timestamped row into MongoDB.
 """
 
 import os
+import time
+import requests
 import pandas as pd
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pymongo.mongo_client import MongoClient
-from skyfield.api import load  # loader
-
-# Binance REST client
-from binance.client import Client as BinanceClient
+from skyfield.api import load as sf_load
 
 # TA indicators
 from ta.trend      import SMAIndicator, EMAIndicator, MACD, IchimokuIndicator
@@ -27,28 +26,37 @@ from ta.momentum   import RSIIndicator, StochRSIIndicator
 
 # 1) Load env vars
 load_dotenv()
-MONGODB_URI        = os.getenv("MONGODB_URI")
-BINANCE_API_KEY    = os.getenv("BINANCE_API_KEY")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+MONGODB_URI = os.getenv("MONGODB_URI")
+# KuCoin public market data does not require auth; 
+# you can still load your API key/secret/passphrase if you need private endpoints
+KUCOIN_API_KEY    = os.getenv("KUCOIN_API_KEY")
+KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
+KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
 # 2) Connect to MongoDB
 client     = MongoClient(MONGODB_URI)
 db         = client["btc_data"]
 collection = db["1h_price_data"]
 
+# KuCoin endpoints
+KUCOIN_BASE = "https://api.kucoin.com"
+
 def load_last_200h_prices():
+    """
+    Load the last 200 hourly documents from MongoDB, sorted ascending.
+    """
     cursor = (
         collection
         .find(
             {},
-            {"_id": 0, "timestamp": 1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
+            {"_id":0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
         )
         .sort("timestamp", -1)
         .limit(200)
     )
     docs = list(cursor)
     if len(docs) < 200:
-        raise RuntimeError(f"Expected 200 rows, found {len(docs)}")
+        raise RuntimeError(f"Expected 200 rows, found {len(docs)} in MongoDB.")
     df = pd.DataFrame(docs)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
     df.set_index("timestamp", inplace=True)
@@ -56,27 +64,39 @@ def load_last_200h_prices():
     return df
 
 def fetch_latest_candle():
-    bc = BinanceClient(BINANCE_API_KEY, BINANCE_API_SECRET)
-    k = bc.get_klines(symbol="BTCUSDT", interval=bc.KLINE_INTERVAL_1HOUR, limit=1)[0]
-    ts = (
-        datetime.utcfromtimestamp(k[0] // 1000)
-        .replace(minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
-    )
+    """
+    Fetch exactly 1 most-recent 1h BTC-USDT candle from KuCoin.
+    """
+    # fetch the last 2 hours to be sure we cover the boundary, then pick the latest
+    end_ts = int(time.time())
+    start_ts = end_ts - 2*3600
+    params = {
+        "symbol":  "BTC-USDT",
+        "type":    "1hour",
+        "startAt": start_ts,
+        "endAt":   end_ts
+    }
+    r = requests.get(f"{KUCOIN_BASE}/api/v1/market/candles", params=params)
+    r.raise_for_status()
+    data = r.json().get("data", [])
+    if not data:
+        raise RuntimeError("KuCoin returned no candle data.")
+    # each entry: [time, open, close, high, low, volume, turnover]
+    t, o, c, h, l, v, _ = data[-1]
+    dt = datetime.fromtimestamp(int(t), tz=timezone.utc)\
+               .replace(minute=0, second=0, microsecond=0)
     return {
-        "timestamp": ts,
-        "Open":   float(k[1]),
-        "High":   float(k[2]),
-        "Low":    float(k[3]),
-        "Close":  float(k[4]),
-        "Volume": float(k[5]),
+        "timestamp": dt,
+        "Open":   float(o),
+        "High":   float(h),
+        "Low":    float(l),
+        "Close":  float(c),
+        "Volume": float(v),
     }
 
 def calculate_moon_cycle(df):
-    """
-    Fixed Skyfield usage: call load.timescale(), not load().
-    """
-    ts  = load.timescale()            # ← here
-    eph = load("de421.bsp")
+    ts  = sf_load().timescale()
+    eph = sf_load("de421.bsp")
     earth, moon, sun = eph["earth"], eph["moon"], eph["sun"]
 
     phases = []
@@ -102,23 +122,24 @@ def calculate_hdpr(df, ma_window=50, threshold=3.0):
     df["HDPR_MA"]       = df["Close"].rolling(ma_window).mean()
     df["HDPR_Distance"] = (df["Close"] - df["HDPR_MA"]) / df["HDPR_MA"]
     df["HDPR_Signal"]   = 0
-    df.loc[df["HDPR_Distance"] > threshold/100, "HDPR_Signal"] = -1
+    df.loc[df["HDPR_Distance"] >  threshold/100, "HDPR_Signal"] = -1
     df.loc[df["HDPR_Distance"] < -threshold/100, "HDPR_Signal"] =  1
 
 def main():
-    # 1) Load last 200h
+    # 1) Load your last 200h of price data
     df = load_last_200h_prices()
 
-    # 2) Fetch newest candle
+    # 2) Fetch the latest candle
     new = fetch_latest_candle()
     newest_ts = new["timestamp"]
     if newest_ts <= df.index.max():
         print(f"No new candle (latest ts = {newest_ts}).")
         return
 
+    # 3) Append & recompute on the 201-row sliding window
     df = pd.concat([df, pd.DataFrame([new]).set_index("timestamp")])
 
-    # 3) Compute indicators on 201-row window
+    # Compute indicators
     df["SMA_50"]  = SMAIndicator(df["Close"], window=50).sma_indicator()
     df["SMA_100"] = SMAIndicator(df["Close"], window=100).sma_indicator()
     df["SMA_200"] = SMAIndicator(df["Close"], window=200).sma_indicator()
@@ -164,7 +185,7 @@ def main():
     new_row = df.loc[newest_ts]
 
     # 5) Drop if NaNs remain in numeric indicators
-    numeric = [
+    numeric_cols = [
         "SMA_50","SMA_100","SMA_200",
         "EMA_20","EMA_50","EMA_100","EMA_200",
         "RSI","Stoch_RSI","Stoch_RSI_K","Stoch_RSI_D",
@@ -175,7 +196,7 @@ def main():
         "HDPR_MA","HDPR_Distance","HDPR_Signal",
         "MACD_Line","MACD_Signal","MACD_Histogram"
     ]
-    if new_row[numeric].isna().any():
+    if new_row[numeric_cols].isna().any():
         print("Skipping upsert: NaNs in long-window indicators.")
         return
 
