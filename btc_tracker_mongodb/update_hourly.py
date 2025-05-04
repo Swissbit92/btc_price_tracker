@@ -17,7 +17,7 @@ import pandas as pd
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pymongo.mongo_client import MongoClient
-from skyfield.api import load as sf_load
+from skyfield.api import load as sf_load  # loader
 
 # TA indicators
 from ta.trend      import SMAIndicator, EMAIndicator, MACD, IchimokuIndicator
@@ -27,8 +27,6 @@ from ta.momentum   import RSIIndicator, StochRSIIndicator
 # 1) Load env vars
 load_dotenv()
 MONGODB_URI = os.getenv("MONGODB_URI")
-# KuCoin public market data does not require auth; 
-# you can still load your API key/secret/passphrase if you need private endpoints
 KUCOIN_API_KEY    = os.getenv("KUCOIN_API_KEY")
 KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
 KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
@@ -42,14 +40,11 @@ collection = db["1h_price_data"]
 KUCOIN_BASE = "https://api.kucoin.com"
 
 def load_last_200h_prices():
-    """
-    Load the last 200 hourly documents from MongoDB, sorted ascending.
-    """
     cursor = (
         collection
         .find(
             {},
-            {"_id":0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
+            {"_id": 0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
         )
         .sort("timestamp", -1)
         .limit(200)
@@ -64,15 +59,11 @@ def load_last_200h_prices():
     return df
 
 def fetch_latest_candle():
-    """
-    Fetch exactly 1 most-recent 1h BTC-USDT candle from KuCoin.
-    """
-    # fetch the last 2 hours to be sure we cover the boundary, then pick the latest
     end_ts = int(time.time())
     start_ts = end_ts - 2*3600
     params = {
-        "symbol":  "BTC-USDT",
-        "type":    "1hour",
+        "symbol": "BTC-USDT",
+        "type":   "1hour",
         "startAt": start_ts,
         "endAt":   end_ts
     }
@@ -81,7 +72,6 @@ def fetch_latest_candle():
     data = r.json().get("data", [])
     if not data:
         raise RuntimeError("KuCoin returned no candle data.")
-    # each entry: [time, open, close, high, low, volume, turnover]
     t, o, c, h, l, v, _ = data[-1]
     dt = datetime.fromtimestamp(int(t), tz=timezone.utc)\
                .replace(minute=0, second=0, microsecond=0)
@@ -95,7 +85,10 @@ def fetch_latest_candle():
     }
 
 def calculate_moon_cycle(df):
-    ts  = sf_load().timescale()
+    """
+    Correctly call sf_load.timescale() to get a Timescale object.
+    """
+    ts  = sf_load.timescale()           # ← fixed here
     eph = sf_load("de421.bsp")
     earth, moon, sun = eph["earth"], eph["moon"], eph["sun"]
 
@@ -126,20 +119,19 @@ def calculate_hdpr(df, ma_window=50, threshold=3.0):
     df.loc[df["HDPR_Distance"] < -threshold/100, "HDPR_Signal"] =  1
 
 def main():
-    # 1) Load your last 200h of price data
+    # Load last 200h
     df = load_last_200h_prices()
 
-    # 2) Fetch the latest candle
+    # Fetch newest candle
     new = fetch_latest_candle()
     newest_ts = new["timestamp"]
     if newest_ts <= df.index.max():
         print(f"No new candle (latest ts = {newest_ts}).")
         return
 
-    # 3) Append & recompute on the 201-row sliding window
+    # Append & compute indicators on 201-row window
     df = pd.concat([df, pd.DataFrame([new]).set_index("timestamp")])
 
-    # Compute indicators
     df["SMA_50"]  = SMAIndicator(df["Close"], window=50).sma_indicator()
     df["SMA_100"] = SMAIndicator(df["Close"], window=100).sma_indicator()
     df["SMA_200"] = SMAIndicator(df["Close"], window=200).sma_indicator()
@@ -181,10 +173,8 @@ def main():
     df["MACD_Signal"]    = macd.macd_signal()
     df["MACD_Histogram"] = macd.macd_diff()
 
-    # 4) Extract just the new row
+    # Extract the new row and upsert
     new_row = df.loc[newest_ts]
-
-    # 5) Drop if NaNs remain in numeric indicators
     numeric_cols = [
         "SMA_50","SMA_100","SMA_200",
         "EMA_20","EMA_50","EMA_100","EMA_200",
@@ -197,17 +187,12 @@ def main():
         "MACD_Line","MACD_Signal","MACD_Histogram"
     ]
     if new_row[numeric_cols].isna().any():
-        print("Skipping upsert: NaNs in long-window indicators.")
+        print("Skipping upsert: NaNs in indicators.")
         return
 
-    # 6) Upsert new document
     doc = new_row.to_dict()
     doc["timestamp"] = newest_ts
-    collection.update_one(
-        {"timestamp": newest_ts},
-        {"$set": doc},
-        upsert=True
-    )
+    collection.update_one({"timestamp": newest_ts}, {"$set": doc}, upsert=True)
 
     print(f"✅ Upserted candle @ {newest_ts}")
 
