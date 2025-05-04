@@ -2,22 +2,22 @@
 """
 update_hourly.py
 
-Incremental hourly update via KuCoin:
+Robust hourly update via KuCoin with backfill:
 1) Load the last 200 hours of price data from MongoDB.
-2) Fetch the latest 1h BTC-USDT candle via KuCoin public API.
-3) Append to the price window (now 201 rows).
-4) Compute all indicators over that window using `ta`.
-5) Upsert only the new timestamped row into MongoDB.
+2) Determine how many hours are missing (if any).
+3) Fetch all missing 1h candles via KuCoin public API.
+4) Append to the sliding window, recompute indicators once.
+5) Upsert each newly fetched candle in timestamp order.
 """
 
 import os
 import time
 import requests
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from pymongo.mongo_client import MongoClient
-from skyfield.api import load as sf_load  # loader
+from skyfield.api import load as sf_load
 
 # TA indicators
 from ta.trend      import SMAIndicator, EMAIndicator, MACD, IchimokuIndicator
@@ -26,7 +26,7 @@ from ta.momentum   import RSIIndicator, StochRSIIndicator
 
 # 1) Load env vars
 load_dotenv()
-MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_URI      = os.getenv("MONGODB_URI")
 KUCOIN_API_KEY    = os.getenv("KUCOIN_API_KEY")
 KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
 KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
@@ -36,15 +36,16 @@ client     = MongoClient(MONGODB_URI)
 db         = client["btc_data"]
 collection = db["1h_price_data"]
 
-# KuCoin endpoints
+# KuCoin base URL
 KUCOIN_BASE = "https://api.kucoin.com"
 
 def load_last_200h_prices():
+    """Load the last 200 hourly candles from MongoDB, sorted ascending."""
     cursor = (
         collection
         .find(
             {},
-            {"_id": 0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
+            {"_id":0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
         )
         .sort("timestamp", -1)
         .limit(200)
@@ -58,37 +59,37 @@ def load_last_200h_prices():
     df.sort_index(inplace=True)
     return df
 
-def fetch_latest_candle():
-    end_ts = int(time.time())
-    start_ts = end_ts - 2*3600
+def fetch_missing_candles(start_ts: int, end_ts: int):
+    """
+    Fetch all 1h BTC-USDT candles from KuCoin between start_ts and end_ts (unix seconds).
+    Returns list of dicts with timestamp, Open, High, Low, Close, Volume.
+    """
     params = {
-        "symbol": "BTC-USDT",
-        "type":   "1hour",
+        "symbol":  "BTC-USDT",
+        "type":    "1hour",
         "startAt": start_ts,
         "endAt":   end_ts
     }
     r = requests.get(f"{KUCOIN_BASE}/api/v1/market/candles", params=params)
     r.raise_for_status()
     data = r.json().get("data", [])
-    if not data:
-        raise RuntimeError("KuCoin returned no candle data.")
-    t, o, c, h, l, v, _ = data[-1]
-    dt = datetime.fromtimestamp(int(t), tz=timezone.utc)\
-               .replace(minute=0, second=0, microsecond=0)
-    return {
-        "timestamp": dt,
-        "Open":   float(o),
-        "High":   float(h),
-        "Low":    float(l),
-        "Close":  float(c),
-        "Volume": float(v),
-    }
+    candles = []
+    for entry in data:
+        t, o, c, h, l, v, _ = entry
+        dt = datetime.fromtimestamp(int(t), tz=timezone.utc)\
+                     .replace(minute=0, second=0, microsecond=0)
+        candles.append({
+            "timestamp": dt,
+            "Open":   float(o),
+            "High":   float(h),
+            "Low":    float(l),
+            "Close":  float(c),
+            "Volume": float(v),
+        })
+    return candles
 
 def calculate_moon_cycle(df):
-    """
-    Correctly call sf_load.timescale() to get a Timescale object.
-    """
-    ts  = sf_load.timescale()           # ← fixed here
+    ts  = sf_load.timescale()
     eph = sf_load("de421.bsp")
     earth, moon, sun = eph["earth"], eph["moon"], eph["sun"]
 
@@ -119,19 +120,31 @@ def calculate_hdpr(df, ma_window=50, threshold=3.0):
     df.loc[df["HDPR_Distance"] < -threshold/100, "HDPR_Signal"] =  1
 
 def main():
-    # Load last 200h
+    # 1) Load last 200h window
     df = load_last_200h_prices()
+    last_ts = df.index.max()
 
-    # Fetch newest candle
-    new = fetch_latest_candle()
-    newest_ts = new["timestamp"]
-    if newest_ts <= df.index.max():
-        print(f"No new candle (latest ts = {newest_ts}).")
+    # 2) Determine current top-of-hour
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    if now <= last_ts:
+        print(f"No new candles—latest in DB is {last_ts}")
         return
 
-    # Append & compute indicators on 201-row window
-    df = pd.concat([df, pd.DataFrame([new]).set_index("timestamp")])
+    # 3) Backfill: fetch all missing hours between last_ts+1h and now
+    start_unix = int((last_ts + timedelta(hours=1)).timestamp())
+    end_unix   = int(now.timestamp())
+    missing = fetch_missing_candles(start_unix, end_unix)
 
+    if not missing:
+        print(f"No missing candles found between {last_ts} and {now}")
+        return
+
+    # 4) Sort ascending by timestamp and append to DataFrame
+    missing.sort(key=lambda x: x["timestamp"])
+    df_missing = pd.DataFrame(missing).set_index("timestamp")
+    df = pd.concat([df, df_missing])
+
+    # 5) Recompute all indicators on the extended window
     df["SMA_50"]  = SMAIndicator(df["Close"], window=50).sma_indicator()
     df["SMA_100"] = SMAIndicator(df["Close"], window=100).sma_indicator()
     df["SMA_200"] = SMAIndicator(df["Close"], window=200).sma_indicator()
@@ -173,8 +186,7 @@ def main():
     df["MACD_Signal"]    = macd.macd_signal()
     df["MACD_Histogram"] = macd.macd_diff()
 
-    # Extract the new row and upsert
-    new_row = df.loc[newest_ts]
+    # 6) Upsert each missing candle in order
     numeric_cols = [
         "SMA_50","SMA_100","SMA_200",
         "EMA_20","EMA_50","EMA_100","EMA_200",
@@ -186,15 +198,15 @@ def main():
         "HDPR_MA","HDPR_Distance","HDPR_Signal",
         "MACD_Line","MACD_Signal","MACD_Histogram"
     ]
-    if new_row[numeric_cols].isna().any():
-        print("Skipping upsert: NaNs in indicators.")
-        return
-
-    doc = new_row.to_dict()
-    doc["timestamp"] = newest_ts
-    collection.update_one({"timestamp": newest_ts}, {"$set": doc}, upsert=True)
-
-    print(f"✅ Upserted candle @ {newest_ts}")
+    for ts in df_missing.index:
+        row = df.loc[ts]
+        if row[numeric_cols].isna().any():
+            print(f"Skipping {ts}: NaNs in indicators.")
+            continue
+        doc = row.to_dict()
+        doc["timestamp"] = ts
+        collection.update_one({"timestamp": ts}, {"$set": doc}, upsert=True)
+        print(f"✅ Upserted backfilled candle @ {ts}")
 
 if __name__ == "__main__":
     main()
