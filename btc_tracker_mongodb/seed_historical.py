@@ -2,7 +2,7 @@
 """
 seed_historical.py
 
-1) Fetch the last 200 1-hour BTC/USDT candles via Binance.
+1) Fetch the last 500 1-hour BTC/USDT candles via KuCoin public API.
 2) Compute all indicators using the `ta` library.
 3) Drop any rows with NaN in numeric indicators.
 4) Upsert into MongoDB **in descending timestamp order** so that the newest docs
@@ -10,11 +10,13 @@ seed_historical.py
 """
 
 import os
+import time
+import requests
 import pandas as pd
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pymongo.mongo_client import MongoClient
-from skyfield.api import load  # for moon phases
+from skyfield.api import load as sf_load  # for moon phases
 
 # TA indicators
 from ta.trend      import SMAIndicator, EMAIndicator, MACD, IchimokuIndicator
@@ -23,49 +25,71 @@ from ta.momentum   import RSIIndicator, StochRSIIndicator
 
 # 1) Load env vars
 load_dotenv()
-MONGODB_URI        = os.getenv("MONGODB_URI")
-BINANCE_API_KEY    = os.getenv("BINANCE_API_KEY")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+MONGODB_URI       = os.getenv("MONGODB_URI")
+# We load your KuCoin secrets in case you later want private endpoints,
+# but public market-data calls do not require them.
+KUCOIN_API_KEY    = os.getenv("KUCOIN_API_KEY")
+KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
+KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
-# 2) Connect
+# 2) Connect to MongoDB
 client     = MongoClient(MONGODB_URI)
 db         = client["btc_data"]
 collection = db["1h_price_data"]
 
+# KuCoin endpoint
+KUCOIN_BASE = "https://api.kucoin.com"
+
 def fetch_last_500h():
-    from binance.client import Client as BinanceClient
-    bc = BinanceClient(BINANCE_API_KEY, BINANCE_API_SECRET)
-    klines = bc.get_klines(
-        symbol="BTCUSDT",
-        interval=bc.KLINE_INTERVAL_1HOUR,
-        limit=5000
-    )
+    """
+    Fetch the last 500 1-hour BTC-USDT candles from KuCoin public API.
+    Returns a DataFrame indexed by timestamp.
+    """
+    end_ts = int(time.time())
+    start_ts = end_ts - 5000 * 3600
+    params = {
+        "symbol":  "BTC-USDT",
+        "type":    "1hour",
+        "startAt": start_ts,
+        "endAt":   end_ts
+    }
+    r = requests.get(f"{KUCOIN_BASE}/api/v1/market/candles", params=params)
+    r.raise_for_status()
+    data = r.json().get("data", [])
     rows = []
-    for k in klines:
-        ts = (datetime.utcfromtimestamp(k[0] // 1000)
-              .replace(minute=0, second=0, microsecond=0, tzinfo=timezone.utc))
+    for entry in data:
+        # entry: [ time, open, close, high, low, volume, turnover ]
+        t, o, c, h, l, v, _ = entry
+        ts = datetime.fromtimestamp(int(t), tz=timezone.utc)\
+                    .replace(minute=0, second=0, microsecond=0)
         rows.append({
             "timestamp": ts,
-            "Open":   float(k[1]),
-            "High":   float(k[2]),
-            "Low":    float(k[3]),
-            "Close":  float(k[4]),
-            "Volume": float(k[5]),
+            "Open":   float(o),
+            "High":   float(h),
+            "Low":    float(l),
+            "Close":  float(c),
+            "Volume": float(v),
         })
-    return pd.DataFrame(rows).set_index("timestamp")
+    df = pd.DataFrame(rows).set_index("timestamp")
+    return df
 
 def calculate_moon_cycle(df):
-    ts  = load.timescale()
-    eph = load("de421.bsp")
+    ts  = sf_load.timescale()
+    eph = sf_load("de421.bsp")
     earth, moon, sun = eph["earth"], eph["moon"], eph["sun"]
+
     phases = []
     for dt in df.index:
         t = ts.utc(dt.year, dt.month, dt.day, dt.hour)
         angle = earth.at(t).observe(moon).apparent().phase_angle(sun).degrees % 360
-        if angle < 45:      phases.append("New Moon")
-        elif angle < 135:   phases.append("First Quarter")
-        elif angle < 225:   phases.append("Full Moon")
-        else:               phases.append("Last Quarter")
+        if angle < 45:
+            phases.append("New Moon")
+        elif angle < 135:
+            phases.append("First Quarter")
+        elif angle < 225:
+            phases.append("Full Moon")
+        else:
+            phases.append("Last Quarter")
     df["Moon_Cycle"] = phases
 
 def calculate_fibonacci(df):
@@ -81,14 +105,14 @@ def calculate_hdpr(df, ma_window=50, threshold=3.0):
     df["HDPR_MA"]       = df["Close"].rolling(ma_window).mean()
     df["HDPR_Distance"] = (df["Close"] - df["HDPR_MA"]) / df["HDPR_MA"]
     df["HDPR_Signal"]   = 0
-    df.loc[df["HDPR_Distance"] > threshold/100, "HDPR_Signal"] = -1
+    df.loc[df["HDPR_Distance"] >  threshold/100, "HDPR_Signal"] = -1
     df.loc[df["HDPR_Distance"] < -threshold/100, "HDPR_Signal"] =  1
 
 def main():
-    # 1) Fetch and set up DataFrame
+    # 1) Fetch and prepare raw price DataFrame
     df = fetch_last_500h()
 
-    # 2) Indicators
+    # 2) Compute all indicators
     df["SMA_50"]  = SMAIndicator(df["Close"], window=50).sma_indicator()
     df["SMA_100"] = SMAIndicator(df["Close"], window=100).sma_indicator()
     df["SMA_200"] = SMAIndicator(df["Close"], window=200).sma_indicator()
@@ -108,15 +132,19 @@ def main():
     df["BB_High"] = bb.bollinger_hband()
     df["BB_Low"]  = bb.bollinger_lband()
 
-    ich = IchimokuIndicator(high=df["High"], low=df["Low"],
-                             window1=9, window2=26, window3=52)
+    ich = IchimokuIndicator(
+        high=df["High"], low=df["Low"],
+        window1=9, window2=26, window3=52
+    )
     df["Ichimoku_Conversion"] = ich.ichimoku_conversion_line()
     df["Ichimoku_Base"]       = ich.ichimoku_base_line()
     df["Ichimoku_A"]          = ich.ichimoku_a()
     df["Ichimoku_B"]          = ich.ichimoku_b()
 
-    don = DonchianChannel(high=df["High"], low=df["Low"],
-                          close=df["Close"], window=20)
+    don = DonchianChannel(
+        high=df["High"], low=df["Low"],
+        close=df["Close"], window=20
+    )
     df["Donchian_High"] = don.donchian_channel_hband()
     df["Donchian_Low"]  = don.donchian_channel_lband()
     df["Donchian_Mid"]  = don.donchian_channel_mband()
@@ -130,8 +158,8 @@ def main():
     df["MACD_Signal"]    = macd.macd_signal()
     df["MACD_Histogram"] = macd.macd_diff()
 
-    # 3) Drop any rows still missing numeric indicators
-    numeric = [
+    # 3) Drop rows with missing numeric indicators
+    numeric_cols = [
       "SMA_50","SMA_100","SMA_200",
       "EMA_20","EMA_50","EMA_100","EMA_200",
       "RSI","Stoch_RSI","Stoch_RSI_K","Stoch_RSI_D",
@@ -142,12 +170,12 @@ def main():
       "HDPR_MA","HDPR_Distance","HDPR_Signal",
       "MACD_Line","MACD_Signal","MACD_Histogram"
     ]
-    df.dropna(subset=numeric, inplace=True)
+    df.dropna(subset=numeric_cols, inplace=True)
 
-    # 4) **Reverse** so newest comes first when inserted
+    # 4) Reverse sort so newest is first
     df = df.sort_index(ascending=False)
 
-    # 5) Upsert in that descending order
+    # 5) Upsert each in descending order
     for ts, row in df.iterrows():
         doc = row.to_dict()
         doc["timestamp"] = ts
