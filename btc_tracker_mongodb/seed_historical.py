@@ -46,7 +46,7 @@ def fetch_last_500h():
     Returns a DataFrame indexed by timestamp.
     """
     end_ts = int(time.time())
-    start_ts = end_ts - 5000 * 3600
+    start_ts = end_ts - 500 * 3600 # Kucoin limit is 1500
     params = {
         "symbol":  "BTC-USDT",
         "type":    "1hour",
