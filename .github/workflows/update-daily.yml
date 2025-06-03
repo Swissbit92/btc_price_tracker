@@ -29,4 +29,4 @@ jobs:
           KUCOIN_API_KEY:    ${{ secrets.KUCOIN_API_KEY }}
           KUCOIN_API_SECRET: ${{ secrets.KUCOIN_API_SECRET }}
         run: |
-          python update_daily.py
+          python btc_tracker_mongodb/update_daily.py
