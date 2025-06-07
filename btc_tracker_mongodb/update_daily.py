@@ -2,14 +2,15 @@
 """
 update_daily.py
 
-1) Load last daily timestamp from MongoDB.
-2) If today at 00:00 UTC is greater, backfill missing 1-day candles via KuCoin.
-3) Compute indicators on extended daily window.
-4) Upsert each new daily document.
+Daily backfill & update via KuCoin with SUB1 trading credentials:
+1) Load the last daily timestamp from MongoDB.
+2) Determine if today's midnight UTC bar is missing.
+3) Fetch all missing 1-day candles via KuCoin public API.
+4) Append, recompute indicators once on the last 200 days + missing.
+5) Upsert each new daily document.
 """
 
 import os
-import time
 import requests
 import pandas as pd
 from datetime import datetime, timezone, timedelta
@@ -17,41 +18,34 @@ from dotenv import load_dotenv
 from pymongo.mongo_client import MongoClient
 from skyfield.api import load as sf_load
 
-# TA indicators (same as seed)
+# TA indicators
 from ta.trend      import SMAIndicator, EMAIndicator, MACD, IchimokuIndicator
 from ta.volatility import BollingerBands, DonchianChannel
 from ta.momentum   import RSIIndicator, StochRSIIndicator
 
 # 1) Load env vars
 load_dotenv()
-MONGODB_URI       = os.getenv("MONGODB_URI")
-KUCOIN_API_KEY    = os.getenv("KUCOIN_API_KEY")
-KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
-KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
+MONGODB_URI           = os.getenv("MONGODB_URI")
+KUCOIN_USERNAME_SUB1  = os.getenv("KUCOIN_USERNAME_SUB1")
+KUCOIN_API_KEY_SUB1   = os.getenv("KUCOIN_API_KEY_SUB1")
+KUCOIN_API_SECRET_SUB1= os.getenv("KUCOIN_API_SECRET_SUB1")
+KUCOIN_PASSPHRASE_SUB1= os.getenv("KUCOIN_PASSPHRASE_SUB1")
 
 # 2) Connect to MongoDB daily collection
 client           = MongoClient(MONGODB_URI)
 db               = client["btc_data"]
 daily_collection = db["daily_price_data"]
 
-# KuCoin API
+# KuCoin API base
 KUCOIN_BASE = "https://api.kucoin.com"
 
 def load_last_daily_timestamp() -> datetime:
-    """
-    Fetch the most recent daily document's timestamp from MongoDB.
-    """
-    doc = daily_collection.find_one(
-        {}, {"_id":0, "timestamp":1}
-    , sort=[("timestamp", -1)])
+    doc = daily_collection.find_one({}, {"_id":0, "timestamp":1}, sort=[("timestamp",-1)])
     if not doc:
         raise RuntimeError("No daily docs found; run seed_daily.py first.")
     return pd.to_datetime(doc["timestamp"], utc=True)
 
 def fetch_missing_daily(start_ts: int, end_ts: int):
-    """
-    Fetch all 1-day BTC-USDT candles from KuCoin between start_ts & end_ts (unix seconds).
-    """
     params = {
         "symbol":  "BTC-USDT",
         "type":    "1day",
@@ -76,7 +70,7 @@ def fetch_missing_daily(start_ts: int, end_ts: int):
         })
     return candles
 
-def calculate_moon_cycle(df: pd.DataFrame):
+def calculate_moon_cycle(df):
     ts  = sf_load.timescale()
     eph = sf_load("de421.bsp")
     earth, moon, sun = eph["earth"], eph["moon"], eph["sun"]
@@ -90,7 +84,7 @@ def calculate_moon_cycle(df: pd.DataFrame):
         else:               phases.append("Last Quarter")
     df["Moon_Cycle"] = phases
 
-def calculate_fibonacci(df: pd.DataFrame):
+def calculate_fibonacci(df):
     low, high = df["Low"].min(), df["High"].max()
     diff = high - low
     df["Fib_0.236"] = high - 0.236 * diff
@@ -99,7 +93,7 @@ def calculate_fibonacci(df: pd.DataFrame):
     df["Fib_0.618"] = high - 0.618 * diff
     df["Fib_1.0"]   = low
 
-def calculate_hdpr(df: pd.DataFrame, ma_window=50, threshold=3.0):
+def calculate_hdpr(df, ma_window=50, threshold=3.0):
     df["HDPR_MA"]       = df["Close"].rolling(ma_window).mean()
     df["HDPR_Distance"] = (df["Close"] - df["HDPR_MA"]) / df["HDPR_MA"]
     df["HDPR_Signal"]   = 0
@@ -107,16 +101,12 @@ def calculate_hdpr(df: pd.DataFrame, ma_window=50, threshold=3.0):
     df.loc[df["HDPR_Distance"] < -threshold/100, "HDPR_Signal"] =  1
 
 def main():
-    # 1) Load last daily timestamp
     last_dt = load_last_daily_timestamp()
-
-    # 2) Compute today@00:00 UTC
-    now_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    now_dt  = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     if now_dt <= last_dt:
         print(f"No new daily bars—latest is {last_dt.date()}.")
         return
 
-    # 3) Fetch missing days from last_dt+1 to now_dt
     start_unix = int((last_dt + timedelta(days=1)).timestamp())
     end_unix   = int(now_dt.timestamp())
     missing = fetch_missing_daily(start_unix, end_unix)
@@ -124,27 +114,24 @@ def main():
         print(f"No missing daily candles between {last_dt.date()} and {now_dt.date()}.")
         return
 
-    # 4) Sort ascending and build a DataFrame for indicator calculation
     missing.sort(key=lambda x: x["timestamp"])
     df_missing = pd.DataFrame(missing).set_index("timestamp")
 
-    # 5) We need a price window of at least 200 days for long indicators.
-    #    Load the last 200 daily docs:
+    # load last 200 days
     cursor = (
         daily_collection
         .find({}, {"_id":0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1})
         .sort("timestamp", -1)
         .limit(200)
     )
-    existing_docs = list(cursor)
-    df_existing = pd.DataFrame(existing_docs)
+    docs = list(cursor)
+    df_existing = pd.DataFrame(docs)
     df_existing["timestamp"] = pd.to_datetime(df_existing["timestamp"], utc=True)
     df_existing = df_existing.set_index("timestamp").sort_index()
 
-    # 6) Concatenate existing + missing to form the extended window
     df_full = pd.concat([df_existing, df_missing])
 
-    # 7) Compute indicators on df_full
+    # indicators
     df_full["SMA_50"]  = SMAIndicator(df_full["Close"], window=50).sma_indicator()
     df_full["SMA_100"] = SMAIndicator(df_full["Close"], window=100).sma_indicator()
     df_full["SMA_200"] = SMAIndicator(df_full["Close"], window=200).sma_indicator()
@@ -164,19 +151,13 @@ def main():
     df_full["BB_High"] = bb.bollinger_hband()
     df_full["BB_Low"]  = bb.bollinger_lband()
 
-    ich = IchimokuIndicator(
-        high=df_full["High"], low=df_full["Low"],
-        window1=9, window2=26, window3=52
-    )
+    ich = IchimokuIndicator(high=df_full["High"], low=df_full["Low"], window1=9, window2=26, window3=52)
     df_full["Ichimoku_Conversion"] = ich.ichimoku_conversion_line()
     df_full["Ichimoku_Base"]       = ich.ichimoku_base_line()
     df_full["Ichimoku_A"]          = ich.ichimoku_a()
     df_full["Ichimoku_B"]          = ich.ichimoku_b()
 
-    don = DonchianChannel(
-        high=df_full["High"], low=df_full["Low"],
-        close=df_full["Close"], window=20
-    )
+    don = DonchianChannel(high=df_full["High"], low=df_full["Low"], close=df_full["Close"], window=20)
     df_full["Donchian_High"] = don.donchian_channel_hband()
     df_full["Donchian_Low"]  = don.donchian_channel_lband()
     df_full["Donchian_Mid"]  = don.donchian_channel_mband()
@@ -190,7 +171,6 @@ def main():
     df_full["MACD_Signal"]    = macd.macd_signal()
     df_full["MACD_Histogram"] = macd.macd_diff()
 
-    # 8) Upsert each missing day in timestamp order
     numeric_cols = [
         "SMA_50","SMA_100","SMA_200",
         "EMA_20","EMA_50","EMA_100","EMA_200",
@@ -209,11 +189,7 @@ def main():
             continue
         doc = row.to_dict()
         doc["timestamp"] = ts
-        daily_collection.update_one(
-            {"timestamp": ts},
-            {"$set": doc},
-            upsert=True
-        )
+        daily_collection.update_one({"timestamp": ts}, {"$set": doc}, upsert=True)
         print(f"✅ Upserted daily candle @ {ts.date()}")
 
 if __name__ == "__main__":

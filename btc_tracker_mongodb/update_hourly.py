@@ -2,7 +2,7 @@
 """
 update_hourly.py
 
-Robust hourly update via KuCoin with backfill:
+Robust hourly update via KuCoin with backfill, using SUB1 trading credentials:
 1) Load the last 200 hours of price data from MongoDB.
 2) Determine how many hours are missing (if any).
 3) Fetch all missing 1h candles via KuCoin public API.
@@ -26,10 +26,11 @@ from ta.momentum   import RSIIndicator, StochRSIIndicator
 
 # 1) Load env vars
 load_dotenv()
-MONGODB_URI      = os.getenv("MONGODB_URI")
-KUCOIN_API_KEY    = os.getenv("KUCOIN_API_KEY")
-KUCOIN_API_SECRET = os.getenv("KUCOIN_API_SECRET")
-KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
+MONGODB_URI          = os.getenv("MONGODB_URI")
+KUCOIN_USERNAME_SUB1 = os.getenv("KUCOIN_USERNAME_SUB1")
+KUCOIN_API_KEY_SUB1  = os.getenv("KUCOIN_API_KEY_SUB1")
+KUCOIN_API_SECRET_SUB1 = os.getenv("KUCOIN_API_SECRET_SUB1")
+KUCOIN_PASSPHRASE_SUB1 = os.getenv("KUCOIN_PASSPHRASE_SUB1")
 
 # 2) Connect to MongoDB
 client     = MongoClient(MONGODB_URI)
@@ -40,13 +41,9 @@ collection = db["1h_price_data"]
 KUCOIN_BASE = "https://api.kucoin.com"
 
 def load_last_200h_prices():
-    """Load the last 200 hourly candles from MongoDB, sorted ascending."""
     cursor = (
         collection
-        .find(
-            {},
-            {"_id":0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1}
-        )
+        .find({}, {"_id":0, "timestamp":1, "Open":1, "High":1, "Low":1, "Close":1, "Volume":1})
         .sort("timestamp", -1)
         .limit(200)
     )
@@ -60,10 +57,6 @@ def load_last_200h_prices():
     return df
 
 def fetch_missing_candles(start_ts: int, end_ts: int):
-    """
-    Fetch all 1h BTC-USDT candles from KuCoin between start_ts and end_ts (unix seconds).
-    Returns list of dicts with timestamp, Open, High, Low, Close, Volume.
-    """
     params = {
         "symbol":  "BTC-USDT",
         "type":    "1hour",
@@ -120,17 +113,14 @@ def calculate_hdpr(df, ma_window=50, threshold=3.0):
     df.loc[df["HDPR_Distance"] < -threshold/100, "HDPR_Signal"] =  1
 
 def main():
-    # 1) Load last 200h window
     df = load_last_200h_prices()
     last_ts = df.index.max()
 
-    # 2) Determine current top-of-hour
     now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     if now <= last_ts:
         print(f"No new candles—latest in DB is {last_ts}")
         return
 
-    # 3) Backfill: fetch all missing hours between last_ts+1h and now
     start_unix = int((last_ts + timedelta(hours=1)).timestamp())
     end_unix   = int(now.timestamp())
     missing = fetch_missing_candles(start_unix, end_unix)
@@ -139,12 +129,11 @@ def main():
         print(f"No missing candles found between {last_ts} and {now}")
         return
 
-    # 4) Sort ascending by timestamp and append to DataFrame
     missing.sort(key=lambda x: x["timestamp"])
     df_missing = pd.DataFrame(missing).set_index("timestamp")
     df = pd.concat([df, df_missing])
 
-    # 5) Recompute all indicators on the extended window
+    # Recompute indicators
     df["SMA_50"]  = SMAIndicator(df["Close"], window=50).sma_indicator()
     df["SMA_100"] = SMAIndicator(df["Close"], window=100).sma_indicator()
     df["SMA_200"] = SMAIndicator(df["Close"], window=200).sma_indicator()
@@ -164,15 +153,13 @@ def main():
     df["BB_High"] = bb.bollinger_hband()
     df["BB_Low"]  = bb.bollinger_lband()
 
-    ich = IchimokuIndicator(high=df["High"], low=df["Low"],
-                             window1=9, window2=26, window3=52)
+    ich = IchimokuIndicator(high=df["High"], low=df["Low"], window1=9, window2=26, window3=52)
     df["Ichimoku_Conversion"] = ich.ichimoku_conversion_line()
     df["Ichimoku_Base"]       = ich.ichimoku_base_line()
     df["Ichimoku_A"]          = ich.ichimoku_a()
     df["Ichimoku_B"]          = ich.ichimoku_b()
 
-    don = DonchianChannel(high=df["High"], low=df["Low"],
-                          close=df["Close"], window=20)
+    don = DonchianChannel(high=df["High"], low=df["Low"], close=df["Close"], window=20)
     df["Donchian_High"] = don.donchian_channel_hband()
     df["Donchian_Low"]  = don.donchian_channel_lband()
     df["Donchian_Mid"]  = don.donchian_channel_mband()
@@ -186,7 +173,6 @@ def main():
     df["MACD_Signal"]    = macd.macd_signal()
     df["MACD_Histogram"] = macd.macd_diff()
 
-    # 6) Upsert each missing candle in order
     numeric_cols = [
         "SMA_50","SMA_100","SMA_200",
         "EMA_20","EMA_50","EMA_100","EMA_200",
