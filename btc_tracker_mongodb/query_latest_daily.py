@@ -9,7 +9,7 @@ uri = os.getenv("MONGODB_URI")
 
 client = MongoClient(uri)
 db = client["btc_data"]
-coll = db["daily_price_data"]
+coll = db["1h_price_data"]
 
 cursor = (
     coll.find({}, { "_id": 0 })
