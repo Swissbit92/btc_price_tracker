@@ -4,7 +4,7 @@
 
 ## 🚀 Project Overview
 
-The **Bitcoin Cloud Price Tracker** is a fully automated, cloud‐hosted application that fetches hourly BTC/USDT price data from the KuCoin public API, computes a comprehensive suite of technical indicators, and stores everything in a MongoDB Atlas database. Designed for reliability and zero‐downtime operation, it handles:
+The **Bitcoin Cloud Price Tracker** is a fully automated, cloud‐hosted application that fetches hourly BTC/USDT price data from the KuCoin public API, computes a comprehensive suite of technical indicators, and stores everything in a MongoDB Atlas database. Designed for reliability and zero‐downtime operation. It handles:
 
 - **Historical Seeding**: Backfills up to 500 hours of past data in one go.  
 - **Hourly Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.  
