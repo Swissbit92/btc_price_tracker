@@ -160,13 +160,17 @@ Create a `.env` file in the project root:
 
 ## 📈 Usage & Examples
 
-- **👟 Running Locally**  
-  - Activate your virtual env (if not already):  
+- **👟 Running Locally**
+
+  - Activate your virtual env (if not already): 
+ 
     ```bash
     source venv/bin/activate      # macOS/Linux  
     .\venv\Scripts\Activate.ps1   # Windows PowerShell  
-    ```  
-  - Run the hourly update script manually:  
+    ```
+ 
+  - Run the hourly update script manually:
+  
     ```bash
     python btc_tracker_mongodb/update_hourly.py
     ```  
