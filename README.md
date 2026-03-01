@@ -4,12 +4,12 @@
 
 ## 🚀 Project Overview
 
-The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches hourly and daily OHLCV candle data for **BTC, ETH, SOL, and XRP** (USDT pairs) from KuCoin via CCXT, computes a comprehensive suite of 52 technical indicators, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
+The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches hourly, 4-hourly, and daily OHLCV candle data for **BTC, ETH, SOL, XRP, and BNB** (USDT pairs) from KuCoin via CCXT, computes a comprehensive suite of 78 technical indicators + ML features, fetches the Fear & Greed Index, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
 
-- **Multi-Token Support**: Tracks BTC, ETH, SOL, and XRP across hourly and daily timeframes (8 collections).
+- **Multi-Token Support**: Tracks BTC, ETH, SOL, XRP, and BNB across 1h, 4h, and daily timeframes (15 collections).
 - **Historical Seeding**: Backfills up to 500 candles per token/timeframe in one go.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
-- **52 Technical Indicators**: SMA, EMA, RSI, StochRSI, Bollinger Bands, Ichimoku, MACD, ATR, ADX, VWAP, Williams %R, CCI, ROC, Fibonacci, HDPR, log returns, Parkinson/realized volatility, and more — computed from a single source of truth (`indicators.py`).
+- **78 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
 - **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.
 
 This project is written in **Python**, leveraging:
@@ -91,7 +91,7 @@ Create a `.env` file in the project root:
     ```
 
 - **🚀 Seed Historical Data**
-  - Seed all 4 tokens (BTC, ETH, SOL, XRP) with 500 candles each:
+  - Seed all 5 tokens (BTC, ETH, SOL, XRP, BNB) with 500 candles each:
     ```bash
     python seed.py --all
     ```
@@ -122,17 +122,17 @@ Create a `.env` file in the project root:
 ## ☁️ Architecture & Cloud Deployment
 
 - **🌐 Data Source**
-  - KuCoin Public API via CCXT (BTC, ETH, SOL, XRP — USDT pairs, no auth required)
+  - KuCoin Public API via CCXT (BTC, ETH, SOL, XRP, BNB — USDT pairs, no auth required)
 
 - **🗄️ Cloud Database**
   - MongoDB Atlas (Free tier M0)
   - Database: `btc_data`
-  - Collections: `{token}_1h_price_data`, `{token}_daily_price_data` (8 total)
+  - Collections: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data` (15 total)
 
 - **🐍 Processing Pipeline**
   - `seed.py` — initial backfill (500 candles per token/timeframe)
   - `update.py` — incremental updates with gap detection
-  - `btc_tracker_mongodb/indicators.py` — 52 indicators, single source of truth
+  - `btc_tracker_mongodb/indicators.py` — 78 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
   - Dependencies: `ccxt`, `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`
 
 - **🔄 Automation & CI/CD**
@@ -347,8 +347,9 @@ With these practices in place, you’ll have a rock-solid development workflow a
 ## ⚙️ CI/CD Workflow
 
 - **🛠️ GitHub Actions Workflows**
-  - `update-hourly.yml`: cron `0 * * * *` — updates all 4 tokens hourly
-  - `update-daily.yml`: cron `5 1 * * *` — updates all 4 tokens daily
+  - `update-hourly.yml`: cron `0 * * * *` — updates all 5 tokens hourly
+  - `update-4h.yml`: cron `0 */4 * * *` — updates all 5 tokens every 4 hours
+  - `update-daily.yml`: cron `5 1 * * *` — updates all 5 tokens daily
   - Triggers: schedule + `workflow_dispatch` (manual)
   - Secret: `MONGODB_URI`
 
@@ -408,15 +409,16 @@ With this CI/CD pipeline in place, every push or scheduled run will automaticall
 - **🤔 FAQs**  
   - **Q**: _How do I start over (reset the database)?_
     **A**: In MongoDB Atlas, drop the collection (e.g. `btc_1h_price_data`), then run `python seed.py --symbol BTC-USDT --timeframe 1h`.
-  - **Q**: _Can I track other timeframes (e.g. 15m, 4h)?_
-    **A**: Add the timeframe to `TIMEFRAMES` in `btc_tracker_mongodb/config.py` (e.g. `"4h": "4hour"`) and run the seed.
+  - **Q**: _Can I track other timeframes (e.g. 15m)?_
+    **A**: The tracker already supports 1h, 4h, and 1d. To add more, add the timeframe to `TIMEFRAMES` in `btc_tracker_mongodb/config.py`, update `extract.py` mappings, and run the seed.
   - **Q**: _How do I add a new token?_
     **A**: Add the symbol to `TOKENS` in `btc_tracker_mongodb/config.py` (e.g. `"DOGE-USDT"`) and seed it.
   - **Q**: _How do I add a custom indicator?_
     **A**:
       1. Add the computation to `btc_tracker_mongodb/indicators.py` (in `compute_all()`).
       2. Add the column name to `get_numeric_cols()` for NaN validation.
-      3. That's it — all scripts use `indicators.py` as the single source of truth.
+      3. Add the column to [`docs/INDICATORS.md`](docs/INDICATORS.md) glossary.
+      4. That's it — all scripts use `indicators.py` as the single source of truth.
   - **Q**: _How can I visualize the data?_  
     **A**: Connect your visualization tool (Metabase, Grafana, Tableau) to your Atlas cluster using the same `MONGODB_URI`. Use the `timestamp` index and any indicator fields for charts.  
 

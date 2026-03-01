@@ -3,6 +3,9 @@ indicators.py — Single source of truth for ALL technical indicator computation
 
 Accepts an OHLCV DataFrame (columns: Open, High, Low, Close, Volume),
 returns the same DataFrame enriched with indicator columns.
+
+See docs/INDICATORS.md for the full glossary (descriptions, ranges, parameters).
+When adding/removing columns, update get_numeric_cols() AND docs/INDICATORS.md.
 """
 
 import numpy as np

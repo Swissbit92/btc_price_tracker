@@ -104,7 +104,7 @@ Computed by `indicators.py` using `pandas-ta-classic`:
 **Derived:** Log returns (1, 4, 12, 24 periods), temporal features (hour/dow sin/cos)
 **Sentiment:** Fear & Greed Index (FnG_Value: 0-100 int, FnG_Class: string)
 
-When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `get_numeric_cols()` if adding/removing columns.
+When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `get_numeric_cols()` if adding/removing columns. Also update the glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md) to keep the reference in sync.
 
 ### Flask App (`app.py`)
 
