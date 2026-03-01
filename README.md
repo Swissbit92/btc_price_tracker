@@ -4,22 +4,22 @@
 
 ## 🚀 Project Overview
 
-The **Bitcoin Cloud Price Tracker** is a fully automated, cloud‐hosted application that fetches hourly BTC/USDT price data from the KuCoin public API, computes a comprehensive suite of technical indicators, and stores everything in a MongoDB Atlas database. Designed for reliability and zero‐downtime operation. It handles the following tasks:
+The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches hourly and daily OHLCV candle data for **BTC, ETH, SOL, and XRP** (USDT pairs) from KuCoin via CCXT, computes a comprehensive suite of 52 technical indicators, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
 
-- **Historical Seeding**: Backfills up to 500 hours of past data in one go.  
-- **Hourly Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.  
-- **Technical Analysis**: Calculates moving averages (SMA, EMA), momentum indicators (RSI, StochRSI), volatility bands (Bollinger, Donchian), Ichimoku Cloud, Fibonacci retracements, moon phases, HDPR signals, MACD, and more—right in the database.  
-- **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.  
+- **Multi-Token Support**: Tracks BTC, ETH, SOL, and XRP across hourly and daily timeframes (8 collections).
+- **Historical Seeding**: Backfills up to 500 candles per token/timeframe in one go.
+- **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
+- **52 Technical Indicators**: SMA, EMA, RSI, StochRSI, Bollinger Bands, Ichimoku, MACD, ATR, ADX, VWAP, Williams %R, CCI, ROC, Fibonacci, HDPR, log returns, Parkinson/realized volatility, and more — computed from a single source of truth (`indicators.py`).
+- **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.
 
 This project is written in **Python**, leveraging:
 
-- `requests` for API calls  
-- `pandas` for data handling  
-- `ta` for technical indicators  
-- `skyfield` for astronomical calculations  
-- `pymongo` for seamless MongoDB integration  
+- `ccxt` for KuCoin API access
+- `pandas` + `pandas-ta-classic` for data handling and technical analysis
+- `pymongo` for seamless MongoDB integration
+- `numpy` for numerical computation
 
-Whether you’re building trading bots, dashboarding price signals, or simply exploring on‐chain analytics, this tracker gives you a robust, extensible foundation—no local host required, zero manual intervention, and all data safely in the cloud.  
+Whether you’re building trading bots, dashboarding price signals, or exploring analytics, this tracker gives you a robust, extensible foundation — no local host required, zero manual intervention, and all data safely in the cloud.
 
 ## 🔧 Prerequisites
 
@@ -29,17 +29,18 @@ Before you can run the Bitcoin Cloud Price Tracker, make sure you have:
 
 - **KuCoin Account**  
   - Create a free KuCoin account and generate an API key & secret (no IP‐whitelist).  
-- **MongoDB Atlas**  
-  - Sign up for the free tier, create a cluster, a database named `btc_data`, and a collection `1h_price_data`.  
-  - Create a database user with read/write permissions.  
+- **MongoDB Atlas**
+  - Sign up for the free tier, create a cluster and a database named `btc_data`.
+  - Collections are created automatically by the seed scripts (e.g. `btc_1h_price_data`, `eth_daily_price_data`).
+  - Create a database user with read/write permissions.
 
 ### 2. Local Tools
 
-- **Python ≥ 3.10**  
-  - Verify with:  
+- **Python ≥ 3.11**
+  - Verify with:
     ```bash
     python --version
-    ```  
+    ```
 - **pip** (Python package manager)  
   - Usually bundled with Python; upgrade if needed:  
     ```bash
@@ -52,20 +53,14 @@ Before you can run the Bitcoin Cloud Price Tracker, make sure you have:
 
 - **Repository**  
   - Fork or push this project to your GitHub account.  
-- **Secrets** (Settings → Secrets → Actions)  
-  - `MONGODB_URI`  
-  - `KUCOIN_API_KEY`  
-  - `KUCOIN_API_SECRET`  
-  - _(Optional)_ `KUCOIN_PASSPHRASE`  
+- **Secrets** (Settings → Secrets → Actions)
+  - `MONGODB_URI`
 
 ### 4. Environment File (if running locally)
 
 Create a `.env` file in the project root:
     ```dotenv
     MONGODB_URI="your-atlas-uri"
-    KUCOIN_API_KEY="your-kucoin-api-key"
-    KUCOIN_API_SECRET="your-kucoin-api-secret"
-    # KUCOIN_PASSPHRASE="your-kucoin-passphrase"   # only if you set one
 
 ## 🛠️ Installation & Setup
 
@@ -95,68 +90,66 @@ Create a `.env` file in the project root:
     pip install -r requirements.txt
     ```
 
-- **🚀 Seed Historical Data**  
-  - This populates MongoDB with the last 500 hourly candles + indicators:  
+- **🚀 Seed Historical Data**
+  - Seed all 4 tokens (BTC, ETH, SOL, XRP) with 500 candles each:
     ```bash
-    python seed_historical.py
-    ```  
-  - ✅ You should see a confirmation like:
+    python seed.py --all
     ```
-    ✅ Seeded 500 hourly candles with indicators (newest first)
+  - Or seed a single token:
+    ```bash
+    python seed.py --symbol BTC-USDT --timeframe 1h
+    ```
+  - You should see output like:
+    ```
+    [seed] BTC-USDT 1h (test=False) - fetching 500 candles...
+    [seed] Upserted 301 documents into prod (500 fetched, 301 after NaN drop)
     ```
 
-- **🔍 Verify Seed**  
-  - Run the query script to inspect the latest 100 entries:  
+- **🔍 Verify Seed**
+  - Query the latest entries:
     ```bash
-    python query_latest_100.py
-    ```  
-  - You should see timestamps descending and all OHLCV fields present.
-
-- **🔄 Start Hourly Updates**  
-  - If using **GitHub Actions**, your workflow is preconfigured in:  
+    python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --limit 20
     ```
-    .github/workflows/update-hourly.yml
-    ```  
-  - Ensure your GitHub **Secrets** (`MONGODB_URI`, `KUCOIN_API_KEY`, `KUCOIN_API_SECRET`) are set.  
-  - You can also run manually for testing:  
+
+- **🔄 Start Updates**
+  - GitHub Actions workflows are preconfigured for hourly + daily updates of all tokens.
+  - Ensure your GitHub **Secret** `MONGODB_URI` is set.
+  - Run manually for testing:
     ```bash
-    python btc_tracker_mongodb/update_hourly.py
+    python update.py --all --timeframe 1h
     ```
 
 ## ☁️ Architecture & Cloud Deployment
 
-- **🌐 Data Source**  
-  - KuCoin Public API (1h BTC-USDT candles, no auth required)  
+- **🌐 Data Source**
+  - KuCoin Public API via CCXT (BTC, ETH, SOL, XRP — USDT pairs, no auth required)
 
-- **🗄️ Cloud Database**  
-  - MongoDB Atlas (Free tier M0)  
-  - Database: `btc_data`, Collection: `1h_price_data`  
+- **🗄️ Cloud Database**
+  - MongoDB Atlas (Free tier M0)
+  - Database: `btc_data`
+  - Collections: `{token}_1h_price_data`, `{token}_daily_price_data` (8 total)
 
-- **🐍 Processing Scripts**  
-  - `seed_historical.py` – backfills last 500h of data  
-  - `update_hourly.py` – hourly incremental & backfill updates  
-  - Dependencies: `pandas`, `ta`, `skyfield`, `requests`, `pymongo`  
+- **🐍 Processing Pipeline**
+  - `seed.py` — initial backfill (500 candles per token/timeframe)
+  - `update.py` — incremental updates with gap detection
+  - `btc_tracker_mongodb/indicators.py` — 52 indicators, single source of truth
+  - Dependencies: `ccxt`, `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`
 
-- **🔄 Automation & CI/CD**  
-  - **GitHub Actions**  
-    - Workflow: `.github/workflows/update-hourly.yml`  
-    - Schedule: cron `0 * * * *` (hourly)  
-    - Steps:  
-      - Checkout code  
-      - Setup Python 3.10  
-      - Install dependencies  
-      - Run `update_hourly.py`  
-  - **⚙️ (Optional) GCP Cloud Run + Cloud Scheduler**  
-    - Containerized service via `Dockerfile`  
-    - Cloud Scheduler job issues HTTP GET to service hourly  
+- **🔄 Automation & CI/CD**
+  - **GitHub Actions**
+    - `update-hourly.yml`: cron `0 * * * *` — `python update.py --all --timeframe 1h`
+    - `update-daily.yml`: cron `5 1 * * *` — `python update.py --all --timeframe 1d`
+    - Python 3.11, deps from `requirements.txt`
+  - **⚙️ (Optional) GCP Cloud Run + Cloud Scheduler**
+    - Containerized service via `Dockerfile`
 
-- **🔒 Secrets Management**  
-  - **GitHub Secrets**: `MONGODB_URI`, `KUCOIN_API_KEY`, `KUCOIN_API_SECRET`  
-  - **Local .env** for development  
+- **🔒 Secrets Management**
+  - **GitHub Secrets**: `MONGODB_URI` (only secret needed — CCXT uses public endpoints)
+  - **Local .env** for development
 
-- **✅ Resilience & Backfill**  
-  - Automatic delta detection backfills missed hours  
-  - Single-range fetch ensures data continuity even after outages  
+- **✅ Resilience & Backfill**
+  - Automatic gap detection backfills missed candles for all tokens
+  - Bulk upsert with unique timestamp index prevents duplicates
 
 ## 📈 Usage & Examples
 
@@ -169,30 +162,27 @@ Create a `.env` file in the project root:
     .\venv\Scripts\Activate.ps1   # Windows PowerShell  
     ```
  
-  - Run the hourly update script manually:
-  
-    ```bash
-    python btc_tracker_mongodb/update_hourly.py
-    ```  
-  - You should see console output like:  
-    ```
-    ✅ Upserted backfilled candle @ 2025-05-05 14:00:00+00:00
-    ```  
+  - Run the update script manually:
 
-- **⏳ Backfill Gaps**  
-  - If the script detects missed hours (e.g. downtime), it will fetch and insert all missing candles between the last stored timestamp and now.  
-  - Example output when 3 hours are backfilled:  
-    ```
-    ✅ Upserted backfilled candle @ 2025-05-05 12:00:00+00:00  
-    ✅ Upserted backfilled candle @ 2025-05-05 13:00:00+00:00  
-    ✅ Upserted backfilled candle @ 2025-05-05 14:00:00+00:00  
-    ```  
-
-- **📊 Querying the Database**  
-  - Inspect the latest 100 hourly candles via the provided script:  
     ```bash
-    python query_latest_100.py
-    ```  
+    python update.py --all --timeframe 1h
+    ```
+  - You should see console output like:
+    ```
+    [update] BTC-USDT 1h - gap from 2026-03-01 22:00:00+00:00 to 2026-03-01 23:00:00+00:00
+    [update] Upserted 1 new candles for BTC-USDT 1h
+    [update] ETH-USDT 1h - up to date (latest: 2026-03-01 23:00:00+00:00)
+    ```
+
+- **⏳ Backfill Gaps**
+  - If the script detects missed candles (e.g. downtime), it automatically fetches and inserts all missing candles for every token.
+
+- **📊 Querying the Database**
+  - Inspect the latest candles:
+    ```bash
+    python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --limit 20
+    python -m btc_tracker_mongodb.query --symbol ETH-USDT --timeframe 1d --limit 10
+    ```
   - Sample output (timestamps descending):  
     | timestamp              | Open     | High     | Low      | Close    | Volume    |
     |------------------------|----------|----------|----------|----------|-----------|
@@ -202,15 +192,18 @@ Create a `.env` file in the project root:
 
 - **🔧 Integrating with Your Dashboard**  
   - Connect directly to MongoDB Atlas from your visualization tool (e.g. Metabase, Grafana, Tableau).  
-  - Use the `timestamp` index and indicator fields (e.g. `EMA_20`, `RSI`, `MACD_Line`) to build charts & alerts.
+  - Use the `timestamp` index and indicator fields (e.g. `EMA_20`, `RSI`, `MACD_Line`, `ATR_14`, `ADX_14`) to build charts & alerts.
 
-- **🤖 Extending for Trading Bots**  
-  - Read the latest document before placing orders:  
+- **🤖 Extending for Trading Bots**
+  - Read the latest document before placing orders:
     ```python
-    latest = collection.find_one({}, sort=[("timestamp", -1)])
-    print(latest["RSI"], latest["EMA_50"], latest["MACD_Histogram"])
-    ```  
-  - Incorporate signals (e.g. `HDPR_Signal`) into your strategy logic.
+    from pymongo import MongoClient
+    client = MongoClient(os.getenv("MONGODB_URI"))
+    btc_1h = client["btc_data"]["btc_1h_price_data"]
+    latest = btc_1h.find_one({}, sort=[("timestamp", -1)])
+    print(latest["RSI"], latest["ATR_14"], latest["ADX_14"], latest["MACD_Histogram"])
+    ```
+  - Incorporate signals (e.g. `HDPR_Signal`, `Williams_R_14`, `Vol_Ratio_14_30`) into your strategy logic.
 
 - **📦 Docker Usage**  
   - Build & run via Docker (for local testing):  
@@ -240,20 +233,16 @@ Enjoy exploring and building on top of your live, cloud‐hosted Bitcoin price t
   - Example test for `fetch_missing_candles()` in `tests/test_backfill.py`:  
     ```python
     import time
-    from btc_tracker_mongodb.update_hourly import fetch_missing_candles
-    from datetime import datetime, timezone, timedelta
+    from btc_tracker_mongodb.extract import fetch_candles
+    import time
 
-    def test_fetch_3h_backfill():
-        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-        start = int((now - timedelta(hours=3)).timestamp())
-        end   = int(now.timestamp())
-        candles = fetch_missing_candles(start, end)
-        assert isinstance(candles, list)
-        assert len(candles) >= 3
-        # each entry has timestamp and numeric fields
-        for c in candles:
-            assert "timestamp" in c
-            assert isinstance(c["Open"], float)
+    def test_fetch_btc_candles():
+        now_ms = int(time.time() * 1000)
+        since_ms = now_ms - (5 * 3600 * 1000)  # last 5 hours
+        df = fetch_candles("BTC-USDT", "1h", since_ms, limit=5)
+        assert len(df) >= 3
+        assert "Open" in df.columns
+        assert "Close" in df.columns
     ```  
   - Run all tests:  
     ```bash
@@ -298,13 +287,13 @@ Enjoy exploring and building on top of your live, cloud‐hosted Bitcoin price t
     ```  
 
 - **🎯 End-to-End Smoke Test**  
-  - After seeding, run the full update and query scripts in one go:  
+  - After seeding, run the full update and query scripts in one go:
     ```bash
-    python seed_historical.py
-    python update_hourly.py
-    python query_latest_100.py
-    ```  
-  - Confirm the latest timestamp in the output matches “now” floored to the hour.  
+    python seed.py --symbol BTC-USDT --timeframe 1h
+    python update.py --symbol BTC-USDT --timeframe 1h
+    python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --limit 5
+    ```
+  - Confirm the latest timestamp in the output matches “now” floored to the hour.
 
 - **🌐 Continuous Integration**  
   - Add your pytest, lint, and build steps to your GitHub Actions workflow to catch issues early:  
@@ -357,37 +346,22 @@ With these practices in place, you’ll have a rock-solid development workflow a
 
 ## ⚙️ CI/CD Workflow
 
-- **🛠️ GitHub Actions Workflow**  
-  - File: `.github/workflows/update-hourly.yml`  
-  - Triggers:  
-    - ⏰ `schedule: "0 * * * *"` (hourly)  
-    - ⚡ `workflow_dispatch` (manual)  
-  - Env-secrets (Settings → Secrets → Actions):  
-    - `MONGODB_URI`  
-    - `KUCOIN_API_KEY`  
-    - `KUCOIN_API_SECRET`  
+- **🛠️ GitHub Actions Workflows**
+  - `update-hourly.yml`: cron `0 * * * *` — updates all 4 tokens hourly
+  - `update-daily.yml`: cron `5 1 * * *` — updates all 4 tokens daily
+  - Triggers: schedule + `workflow_dispatch` (manual)
+  - Secret: `MONGODB_URI`
 
-- **🔄 Core Steps**  
-  1. **📥 Checkout** your repo  
-  2. **🐍 Setup Python** 3.10  
-  3. **📦 Install deps** (`pymongo[srv]`, `python-dotenv`, `pandas`, `ta`, `skyfield`, `requests`)  
-  4. **🧪 (Optional) Lint & Test**  
+- **🔄 Core Steps**
+  1. **📥 Checkout** your repo
+  2. **🐍 Setup Python** 3.11
+  3. **📦 Install deps** (`pip install -r requirements.txt`)
+  4. **🚀 Run updater**
      ```yaml
-     - name: Run tests & lint
-       run: |
-         pip install pytest black flake8
-         pytest --maxfail=1 --disable-warnings -q
-         black --check .
-         flake8 .
-     ```  
-  5. **🚀 Run updater**  
-     ```yaml
-     - name: Run hourly update
-       run: python btc_tracker_mongodb/update_hourly.py
+     - name: Run hourly update for all tokens
        env:
-         MONGODB_URI:      ${{ secrets.MONGODB_URI }}
-         KUCOIN_API_KEY:   ${{ secrets.KUCOIN_API_KEY }}
-         KUCOIN_API_SECRET:${{ secrets.KUCOIN_API_SECRET }}
+         MONGODB_URI: ${{ secrets.MONGODB_URI }}
+       run: python update.py --all --timeframe 1h
      ```
 
 - **🎯 Build & Deploy (Optional)**  
@@ -405,9 +379,9 @@ With this CI/CD pipeline in place, every push or scheduled run will automaticall
 
 ## ❓ Troubleshooting & FAQs
 
-- **⚠️ “Expected 200 rows, found X”**  
-  - Your `update_hourly.py` requires at least 200 historical rows to compute long‐window indicators.  
-  - **Solution**: Run `python seed_historical.py` to seed 500 hours, or ensure you’ve backfilled enough data.
+- **⚠️ “No data for BTC-USDT 1h — run seed first.”**
+  - The update script requires at least 200 rows to compute long-window indicators.
+  - **Solution**: Run `python seed.py --symbol BTC-USDT --timeframe 1h` to seed 500 candles first.
 
 - **❌ “Service unavailable from a restricted location”**  
   - This error was triggered by Binance geo‐blocks on cloud egress IPs.  
@@ -419,11 +393,11 @@ With this CI/CD pipeline in place, every push or scheduled run will automaticall
     1. Verify your DataFrame contains at least 200+ rows.  
     2. Re‐run `seed_historical.py` or let the hourly backfill accumulate more hours.
 
-- **🔒 “Authentication failed” or missing environment variables**  
-  - Happens when `MONGODB_URI`, `KUCOIN_API_KEY`, or `KUCOIN_API_SECRET` are unset or invalid.  
-  - **Solution**:  
-    - Locally: Confirm `.env` file in project root contains correct entries (and is listed in `.gitignore`).  
-    - GitHub Actions: Check **Settings → Secrets** for typos and that they match your workflow.
+- **🔒 “MONGODB_URI not set” or authentication errors**
+  - Happens when `MONGODB_URI` is unset or invalid.
+  - **Solution**:
+    - Locally: Confirm `.env` file in project root contains `MONGODB_URI` (and is listed in `.gitignore`).
+    - GitHub Actions: Check **Settings → Secrets** for the `MONGODB_URI` secret.
 
 - **🐢 Performance issues or rate limits**  
   - KuCoin’s public API allows ~300 requests/min. Backfill uses one request per range call.  
@@ -432,15 +406,17 @@ With this CI/CD pipeline in place, every push or scheduled run will automaticall
     - Add short `time.sleep(1)` between calls if you hit HTTP 429.
 
 - **🤔 FAQs**  
-  - **Q**: _How do I start over (reset the database)?_  
-    **A**: In MongoDB Atlas, drop the `1h_price_data` collection, then run `python seed_historical.py`.  
-  - **Q**: _Can I track other timeframes (e.g. 15m, 4h)?_  
-    **A**: Yes—duplicate and adapt `fetch_missing_candles()` and `fetch_latest_candle()` with the desired `type` (e.g. `"15min"`, `"4hour"`). Then adjust your MongoDB schema accordingly.  
-  - **Q**: _How do I add a custom indicator?_  
-    **A**:  
-      1. Import or implement the indicator in `update_hourly.py` (or `seed_historical.py`).  
-      2. Compute it on the DataFrame alongside the other indicators.  
-      3. Add its column name to the `numeric_cols` list so NaN checks still apply.  
+  - **Q**: _How do I start over (reset the database)?_
+    **A**: In MongoDB Atlas, drop the collection (e.g. `btc_1h_price_data`), then run `python seed.py --symbol BTC-USDT --timeframe 1h`.
+  - **Q**: _Can I track other timeframes (e.g. 15m, 4h)?_
+    **A**: Add the timeframe to `TIMEFRAMES` in `btc_tracker_mongodb/config.py` (e.g. `"4h": "4hour"`) and run the seed.
+  - **Q**: _How do I add a new token?_
+    **A**: Add the symbol to `TOKENS` in `btc_tracker_mongodb/config.py` (e.g. `"DOGE-USDT"`) and seed it.
+  - **Q**: _How do I add a custom indicator?_
+    **A**:
+      1. Add the computation to `btc_tracker_mongodb/indicators.py` (in `compute_all()`).
+      2. Add the column name to `get_numeric_cols()` for NaN validation.
+      3. That's it — all scripts use `indicators.py` as the single source of truth.
   - **Q**: _How can I visualize the data?_  
     **A**: Connect your visualization tool (Metabase, Grafana, Tableau) to your Atlas cluster using the same `MONGODB_URI`. Use the `timestamp` index and any indicator fields for charts.  
 
