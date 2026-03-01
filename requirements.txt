@@ -2,7 +2,8 @@ flask
 gunicorn
 pymongo[srv]
 python-dotenv
-python-binance
+ccxt
 pandas
-ta
-skyfield
+pandas-ta-classic
+numpy
+requests

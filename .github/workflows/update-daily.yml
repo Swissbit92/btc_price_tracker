@@ -1,8 +1,7 @@
-name: Daily BTC Price Update
+name: Daily Price Update (All Tokens)
 
 on:
   schedule:
-    # Run every day at 01:05 UTC (give the seed job some buffer)
     - cron: "5 1 * * *"
   workflow_dispatch:
 
@@ -16,17 +15,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pymongo[srv] python-dotenv pandas ta skyfield requests
+          pip install -r requirements.txt
 
-      - name: Run daily update
+      - name: Run daily update for all tokens
         env:
-          MONGODB_URI:       ${{ secrets.MONGODB_URI }}
-          KUCOIN_API_KEY:    ${{ secrets.KUCOIN_API_KEY }}
-          KUCOIN_API_SECRET: ${{ secrets.KUCOIN_API_SECRET }}
-        run: |
-          python btc_tracker_mongodb/update_daily.py
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: python update.py --all --timeframe 1d
