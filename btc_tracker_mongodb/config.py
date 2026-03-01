@@ -2,10 +2,10 @@
 config.py — Central configuration for the multi-token price tracker.
 """
 
-TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT"]
+TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT"]
 
 # internal name -> KuCoin API candle type
-TIMEFRAMES = {"1h": "1hour", "1d": "1day"}
+TIMEFRAMES = {"1h": "1hour", "4h": "4hour", "1d": "1day"}
 
 DB_NAME = "btc_data"
 DB_NAME_TEST = "btc_data_test"
@@ -21,10 +21,11 @@ def get_collection_name(symbol: str, timeframe: str) -> str:
 
     Examples:
         'BTC-USDT' + '1h'  -> 'btc_1h_price_data'
-        'ETH-USDT' + '1d'  -> 'eth_daily_price_data'
+        'ETH-USDT' + '4h'  -> 'eth_4h_price_data'
+        'SOL-USDT' + '1d'  -> 'sol_daily_price_data'
     """
     token = symbol.split("-")[0].lower()
-    tf_map = {"1h": "1h", "1d": "daily"}
+    tf_map = {"1h": "1h", "4h": "4h", "1d": "daily"}
     return f"{token}_{tf_map[timeframe]}_price_data"
 
 

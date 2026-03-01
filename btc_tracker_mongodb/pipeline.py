@@ -9,18 +9,38 @@ from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
 from .db import load_latest, get_latest_timestamp, bulk_upsert, ensure_indexes
 from .extract import fetch_candles, fetch_seed_candles
 from .indicators import compute_all, get_numeric_cols
+from .sentiment import fetch_fear_greed
 
 
 def _timedelta_for(timeframe: str) -> timedelta:
-    return {"1h": timedelta(hours=1), "1d": timedelta(days=1)}[timeframe]
+    return {
+        "1h": timedelta(hours=1),
+        "4h": timedelta(hours=4),
+        "1d": timedelta(days=1),
+    }[timeframe]
 
 
 def _floor_timestamp(dt: datetime, timeframe: str) -> datetime:
     """Floor a datetime to the candle boundary."""
     if timeframe == "1h":
         return dt.replace(minute=0, second=0, microsecond=0)
+    elif timeframe == "4h":
+        return dt.replace(hour=(dt.hour // 4) * 4, minute=0, second=0, microsecond=0)
     else:  # 1d
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _merge_sentiment(docs: list[dict], fng: dict | None) -> list[dict]:
+    """Merge Fear & Greed data into each document."""
+    if fng is None:
+        for doc in docs:
+            doc["FnG_Value"] = None
+            doc["FnG_Class"] = None
+    else:
+        for doc in docs:
+            doc["FnG_Value"] = fng["FnG_Value"]
+            doc["FnG_Class"] = fng["FnG_Class"]
+    return docs
 
 
 def run_seed(symbol: str, timeframe: str, test: bool = False, count: int = SEED_WINDOW):
@@ -37,14 +57,18 @@ def run_seed(symbol: str, timeframe: str, test: bool = False, count: int = SEED_
         return
 
     print(f"[seed] Fetched {len(df)} candles, computing indicators...")
-    df = compute_all(df)
+    df = compute_all(df, timeframe)
 
     # Drop rows where required indicators are NaN
     numeric_cols = get_numeric_cols()
     present_cols = [c for c in numeric_cols if c in df.columns]
     df_clean = df.dropna(subset=present_cols)
 
+    # Fetch Fear & Greed
+    fng = fetch_fear_greed()
+
     docs = _df_to_docs(df_clean)
+    docs = _merge_sentiment(docs, fng)
     n = bulk_upsert(symbol, timeframe, docs, test)
     print(f"[seed] Upserted {n} documents into {'test' if test else 'prod'} "
           f"({len(df)} fetched, {len(df_clean)} after NaN drop)")
@@ -73,13 +97,16 @@ def run_seed_from_csv(
     df.sort_index(inplace=True)
 
     print(f"[seed-csv] Loaded {len(df)} rows, computing indicators...")
-    df = compute_all(df)
+    df = compute_all(df, timeframe)
 
     numeric_cols = get_numeric_cols()
     present_cols = [c for c in numeric_cols if c in df.columns]
     df_clean = df.dropna(subset=present_cols)
 
+    fng = fetch_fear_greed()
+
     docs = _df_to_docs(df_clean)
+    docs = _merge_sentiment(docs, fng)
     n = bulk_upsert(symbol, timeframe, docs, test)
     print(f"[seed-csv] Upserted {n} documents into {'test' if test else 'prod'}")
 
@@ -122,7 +149,10 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
     df_full = df_full[~df_full.index.duplicated(keep="last")]
     df_full.sort_index(inplace=True)
 
-    df_full = compute_all(df_full)
+    df_full = compute_all(df_full, timeframe)
+
+    # Fetch Fear & Greed once per update run
+    fng = fetch_fear_greed()
 
     # Only upsert the newly fetched timestamps (not the window)
     numeric_cols = get_numeric_cols()
@@ -141,6 +171,7 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
         doc["timestamp"] = ts
         new_docs.append(doc)
 
+    new_docs = _merge_sentiment(new_docs, fng)
     n = bulk_upsert(symbol, timeframe, new_docs, test)
     print(f"[update] Upserted {n} new candles for {symbol} {timeframe}")
 

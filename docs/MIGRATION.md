@@ -239,15 +239,91 @@ python update.py --all --test
 
 ---
 
+## Phase D: Indicator & Token Expansion
+
+> **Goal:** Expand from 52 to ~79 indicators, add BNB as 5th token, add 4h timeframe, integrate Fear & Greed Index.
+
+### D1. Indicator cleanup
+- [ ] Removed `Stoch_RSI` (duplicate of `Stoch_RSI_K`)
+- [ ] Removed `ROC_12`, `ROC_24` (near-duplicate of `LogReturn_12`/`LogReturn_24`)
+- [ ] Fixed `HDPR_MA` to reuse `SMA_50` instead of recomputing
+- [ ] Fixed VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily
+
+### D2. New indicators added (Tier 1)
+- [ ] OBV (On-Balance Volume)
+- [ ] CMF (Chaikin Money Flow, 20)
+- [ ] MFI (Money Flow Index, 14)
+- [ ] Supertrend (7, 3.0) — direction + value
+- [ ] NATR (Normalized ATR, 14)
+- [ ] KAMA (Kaufman Adaptive MA, 10)
+- [ ] Choppiness Index (14)
+
+### D3. New indicators added (Tier 2)
+- [ ] Squeeze Momentum (flag + momentum)
+- [ ] Aroon (Up/Down/Oscillator, 25)
+- [ ] HMA (Hull MA, 20)
+- [ ] PSAR (Parabolic SAR)
+- [ ] Stochastic (K=14, D=3)
+- [ ] TRIX (18)
+
+### D4. ML feature engineering
+- [ ] Close/RSI/Volume Z-scores (100-period)
+- [ ] Candle body/wick ratios (ATR-normalized)
+- [ ] Price vs EMA20/SMA200 (ATR-normalized)
+- [ ] BB Width
+- [ ] RSI Slope (3), MACD Slope (3)
+
+### D5. Fear & Greed Index
+- [ ] Created `sentiment.py` — fetches from `https://api.alternative.me/fng/`
+- [ ] Integrated into `pipeline.py` — FnG_Value (int 0-100) and FnG_Class (string) added to each document
+- [ ] Graceful fallback: pipeline continues if API is unreachable
+
+### D6. Token expansion
+- [ ] Added BNB-USDT to TOKENS in `config.py`
+- [ ] 5 tokens total: BTC, ETH, SOL, XRP, BNB
+
+### D7. Timeframe expansion
+- [ ] Added 4h to TIMEFRAMES in `config.py`
+- [ ] Updated `get_collection_name()` for 4h -> `{token}_4h_price_data`
+- [ ] Updated `extract.py` with 4h CCXT/delta mappings
+- [ ] Updated `pipeline.py` with 4h timedelta and floor logic
+- [ ] Created `.github/workflows/update-4h.yml` (cron `0 */4 * * *`)
+
+### D8. Column count
+| Category | Count |
+|---|---|
+| Existing (after cleanup) | 49 (-3: Stoch_RSI, ROC_12, ROC_24) |
+| Tier 1 new | +9 |
+| Tier 2 new | +9 |
+| ML features | +11 |
+| Sentiment | +1 numeric (FnG_Value) + 1 string (FnG_Class) |
+| **Total** | **~79 numeric + 1 string** |
+
+### Phase D — Test Gate
+- [ ] **D-TG1: Import test** — All modules import without errors
+- [ ] **D-TG2: Indicator smoke test** — `compute_all()` on 300-row synthetic OHLCV produces ~79 expected columns
+- [ ] **D-TG3: No NaN in tail** — Zero NaN in last 50 rows of all indicator columns
+- [ ] **D-TG4: Fear & Greed fetch** — `fetch_fear_greed()` returns valid data
+- [ ] **D-TG5: BNB CCXT fetch** — BNB-USDT candles fetch successfully for 1h, 4h, 1d
+- [ ] **D-TG6: Test DB seed** — All 15 collections (5 tokens x 3 timeframes) seeded in test DB
+- [ ] **D-TG7: OHLCV parity** — Existing 4 tokens' OHLCV data unchanged by new indicators
+- [ ] **D-TG8: Update clean** — `update.py --all --test` runs with no errors
+
+---
+
 ## Current Status
 
 **Phase A: COMPLETE** — All new modules created, requirements updated. All 7 test gates passed (2026-03-01).
 **Phase B: COMPLETE** — All 4 tokens seeded. 8/8 test gates passed (2026-03-01).
 **Phase C: IN PROGRESS** — C1-C4 done. 4/6 test gates passed. Remaining: C-TG5 (24h validation), C-TG6 (gap check). Then C5-C7 (downstream + cleanup).
+**Phase D: IN PROGRESS** — Code changes complete. Pending: test gates, seeding, validation.
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).
-- VWAP uses manual cumulative calculation instead of library function to avoid timezone warnings in 24/7 crypto context.
+- VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily. Fixes sliding window reset artifact.
 - Fibonacci column names use underscores (`Fib_236`) not dots (`Fib_0.236`) — MongoDB doesn't allow dots in field names.
-- `Stoch_RSI` now equals `Stoch_RSI_K` (smoothed %K). Old pipeline stored raw unsmoothed value. K and D values match.
+- `Stoch_RSI` column removed (was duplicate of `Stoch_RSI_K`). Only `Stoch_RSI_K` and `Stoch_RSI_D` remain.
+- `ROC_12`/`ROC_24` removed — `LogReturn_12`/`LogReturn_24` are mathematically equivalent and ML-preferred.
 - Ichimoku A/B have small library-level differences (Senkou span shift handling). Both computations are valid.
+- Fear & Greed API: free, no signup, daily resolution. Same value merged into all candles per pipeline run.
+- `compute_all()` now takes `timeframe` parameter for VWAP calculation mode.

@@ -28,12 +28,12 @@ def _normalize_symbol(symbol: str) -> str:
 
 def _timeframe_ccxt(timeframe: str) -> str:
     """Convert internal timeframe key to CCXT timeframe string."""
-    return {"1h": "1h", "1d": "1d"}[timeframe]
+    return {"1h": "1h", "4h": "4h", "1d": "1d"}[timeframe]
 
 
 def _candle_delta_ms(timeframe: str) -> int:
     """Milliseconds per candle."""
-    return {"1h": 3_600_000, "1d": 86_400_000}[timeframe]
+    return {"1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}[timeframe]
 
 
 def fetch_candles(
