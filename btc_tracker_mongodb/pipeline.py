@@ -6,10 +6,25 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 
 from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
-from .db import load_latest, get_latest_timestamp, bulk_upsert, ensure_indexes
+from .db import load_latest, get_latest_timestamp, bulk_upsert, ensure_indexes, upsert_indicator_glossary
 from .extract import fetch_candles, fetch_seed_candles
 from .indicators import compute_all, get_numeric_cols
 from .sentiment import fetch_fear_greed
+
+
+_glossary_synced = False
+
+
+def _sync_glossary(test: bool = False):
+    """Upsert the indicator glossary once per process lifetime."""
+    global _glossary_synced
+    if _glossary_synced:
+        return
+    try:
+        upsert_indicator_glossary(test)
+    except Exception as e:
+        print(f"[glossary] WARNING: failed to sync glossary: {e}")
+    _glossary_synced = True
 
 
 def _timedelta_for(timeframe: str) -> timedelta:
@@ -48,6 +63,7 @@ def run_seed(symbol: str, timeframe: str, test: bool = False, count: int = SEED_
 
     Computes all indicators and drops rows with NaN in required columns.
     """
+    _sync_glossary(test)
     print(f"[seed] {symbol} {timeframe} (test={test}) — fetching {count} candles...")
     ensure_indexes(symbol, timeframe, test)
 
@@ -81,6 +97,7 @@ def run_seed_from_csv(
     test: bool = False,
 ):
     """Seed from a local CSV file (e.g., daily_history.csv)."""
+    _sync_glossary(test)
     print(f"[seed-csv] {symbol} {timeframe} from {csv_path} (test={test})")
     ensure_indexes(symbol, timeframe, test)
 
@@ -115,6 +132,7 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
     """Incremental update: detect gaps since last stored timestamp, fetch
     missing candles, recompute indicators on the sliding window, upsert new rows.
     """
+    _sync_glossary(test)
     ensure_indexes(symbol, timeframe, test)
 
     last_ts = get_latest_timestamp(symbol, timeframe, test)

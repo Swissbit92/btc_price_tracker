@@ -1,7 +1,13 @@
 # Indicator Glossary
 
 > **Single source of truth:** `btc_tracker_mongodb/indicators.py`
-> If you add, remove, or rename any indicator column, update **this file**, `get_numeric_cols()` in `indicators.py`, and the indicator summary in `CLAUDE.md`.
+> If you add, remove, or rename any indicator column, update the `INDICATOR_GLOSSARY` dict in `indicators.py` — `get_numeric_cols()` derives from it automatically. Also update **this file** and the indicator summary in `CLAUDE.md`.
+
+> **Programmatic access:** The glossary is also stored in MongoDB as a self-describing document. Query it from any consumer:
+> ```python
+> db.indicator_metadata.find_one({"_id": "indicator_glossary"})
+> ```
+> The document includes column names, descriptions, categories, ranges, and a `schema_hash` for change detection. It is automatically synced on every pipeline run (seed or update).
 
 Each document stored in MongoDB contains OHLCV fields (`Open`, `High`, `Low`, `Close`, `Volume`, `timestamp`) plus the indicator columns listed below.
 

@@ -49,6 +49,9 @@ python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --limit 20
 # Compare test vs production data
 python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --test --compare
 
+# View indicator glossary from MongoDB
+python -m btc_tracker_mongodb.query --glossary [--test]
+
 # Run Flask app locally (exposes update endpoint at :8080)
 python app.py
 
@@ -77,18 +80,19 @@ All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):
   - e.g. `btc_1h_price_data`, `eth_4h_price_data`, `sol_daily_price_data`, `bnb_1h_price_data`
 - Each document is keyed by `timestamp` (UTC datetime); unique index enforced
 - 5 tokens x 3 timeframes = 15 collections total
+- `indicator_metadata` collection: stores a single `indicator_glossary` document with column descriptions, categories, ranges, and a `schema_hash` for change detection. Auto-synced on every pipeline run.
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
 | File | Purpose |
 |---|---|
 | `config.py` | Central config: TOKENS (5), TIMEFRAMES (3), DB names, collection name mapping |
-| `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, bulk_upsert, ensure_indexes |
+| `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, bulk_upsert, ensure_indexes, upsert_indicator_glossary |
 | `extract.py` | CCXT-based KuCoin data fetching: fetch_candles, fetch_seed_candles |
-| `indicators.py` | Single source of truth for ~79 indicators + ML features: compute_all(), get_numeric_cols() |
+| `indicators.py` | Single source of truth for ~79 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY, get_glossary_document() |
 | `sentiment.py` | Fear & Greed Index fetcher: fetch_fear_greed() with graceful fallback |
 | `pipeline.py` | Orchestration: run_seed, run_update, run_seed_from_csv, run_seed_all, run_update_all |
-| `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare mode |
+| `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare and --glossary modes |
 
 ### Technical Indicators (~79 numeric + 1 string column)
 
@@ -104,7 +108,7 @@ Computed by `indicators.py` using `pandas-ta-classic`:
 **Derived:** Log returns (1, 4, 12, 24 periods), temporal features (hour/dow sin/cos)
 **Sentiment:** Fear & Greed Index (FnG_Value: 0-100 int, FnG_Class: string)
 
-When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `get_numeric_cols()` if adding/removing columns. Also update the glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md) to keep the reference in sync.
+When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `INDICATOR_GLOSSARY` if adding/removing columns (`get_numeric_cols()` derives from it automatically). Also update the glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md) to keep the human-readable reference in sync.
 
 ### Flask App (`app.py`)
 

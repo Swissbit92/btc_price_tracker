@@ -127,7 +127,7 @@ Create a `.env` file in the project root:
 - **🗄️ Cloud Database**
   - MongoDB Atlas (Free tier M0)
   - Database: `btc_data`
-  - Collections: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data` (15 total)
+  - Collections: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data` (15 total) + `indicator_metadata` (glossary)
 
 - **🐍 Processing Pipeline**
   - `seed.py` — initial backfill (500 candles per token/timeframe)
@@ -182,6 +182,10 @@ Create a `.env` file in the project root:
     ```bash
     python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --limit 20
     python -m btc_tracker_mongodb.query --symbol ETH-USDT --timeframe 1d --limit 10
+    ```
+  - View the indicator glossary (descriptions, ranges, categories):
+    ```bash
+    python -m btc_tracker_mongodb.query --glossary
     ```
   - Sample output (timestamps descending):  
     | timestamp              | Open     | High     | Low      | Close    | Volume    |
@@ -416,9 +420,9 @@ With this CI/CD pipeline in place, every push or scheduled run will automaticall
   - **Q**: _How do I add a custom indicator?_
     **A**:
       1. Add the computation to `btc_tracker_mongodb/indicators.py` (in `compute_all()`).
-      2. Add the column name to `get_numeric_cols()` for NaN validation.
+      2. Add the column to `INDICATOR_GLOSSARY` in `indicators.py` (`get_numeric_cols()` derives from it automatically).
       3. Add the column to [`docs/INDICATORS.md`](docs/INDICATORS.md) glossary.
-      4. That's it — all scripts use `indicators.py` as the single source of truth.
+      4. That's it — all scripts use `indicators.py` as the single source of truth, and the MongoDB glossary auto-syncs on the next pipeline run.
   - **Q**: _How can I visualize the data?_  
     **A**: Connect your visualization tool (Metabase, Grafana, Tableau) to your Atlas cluster using the same `MONGODB_URI`. Use the `timestamp` index and any indicator fields for charts.  
 

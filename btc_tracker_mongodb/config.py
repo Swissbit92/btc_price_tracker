@@ -15,6 +15,8 @@ SEED_WINDOW = 500
 
 KUCOIN_BASE = "https://api.kucoin.com"
 
+METADATA_COLLECTION = "indicator_metadata"
+
 
 def get_collection_name(symbol: str, timeframe: str) -> str:
     """Map symbol + timeframe to a collection name.

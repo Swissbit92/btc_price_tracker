@@ -4,12 +4,14 @@ query.py — Parameterized debug query utility.
 Usage:
     python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h [--test] [--limit 20]
     python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --test --compare
+    python -m btc_tracker_mongodb.query --glossary [--test]
 """
 
 import argparse
+import json
 import pandas as pd
-from .db import get_collection
-from .config import get_collection_name
+from .db import get_collection, get_db
+from .config import get_collection_name, METADATA_COLLECTION
 
 
 def query_latest(symbol: str, timeframe: str, test: bool = False, limit: int = 10):
@@ -34,6 +36,31 @@ def query_latest(symbol: str, timeframe: str, test: bool = False, limit: int = 1
     print(df.to_string(index=False, max_cols=10))
     print(f"\nTotal columns: {len(df.columns)}")
     print(f"Columns: {list(df.columns)}")
+
+
+def query_glossary(test: bool = False):
+    """Fetch and pretty-print the indicator glossary from MongoDB."""
+    db = get_db(test)
+    doc = db[METADATA_COLLECTION].find_one({"_id": "indicator_glossary"})
+    if doc is None:
+        print("No glossary document found. Run seed or update first to sync it.")
+        return
+
+    print(f"\n{'TEST' if test else 'PROD'} | Indicator Glossary")
+    print(f"Schema hash : {doc.get('schema_hash', 'N/A')[:16]}...")
+    print(f"Updated at  : {doc.get('updated_at', 'N/A')}")
+    print(f"Total cols  : {doc.get('total_columns', 'N/A')} "
+          f"({doc.get('total_numeric', '?')} numeric, "
+          f"{doc.get('total_string', '?')} string)\n")
+
+    for cat in doc.get("categories", []):
+        print(f"  {cat['name']} ({cat['count']} columns)")
+        for col in cat["columns"]:
+            meta = doc.get("indicators", {}).get(col, {})
+            desc = meta.get("description", "")
+            rng = meta.get("range", "")
+            print(f"    {col:<25} [{rng}]  {desc[:80]}")
+        print()
 
 
 def compare_collections(symbol: str, timeframe: str, limit: int = 20):
@@ -87,14 +114,18 @@ def compare_collections(symbol: str, timeframe: str, limit: int = 20):
 def main():
     parser = argparse.ArgumentParser(description="Query price data collections")
     parser.add_argument("--symbol", default="BTC-USDT", help="e.g. BTC-USDT")
-    parser.add_argument("--timeframe", default="1h", choices=["1h", "1d"])
+    parser.add_argument("--timeframe", default="1h", choices=["1h", "4h", "1d"])
     parser.add_argument("--test", action="store_true", help="Query test database")
     parser.add_argument("--limit", type=int, default=10, help="Number of docs to show")
     parser.add_argument("--compare", action="store_true",
                         help="Compare OHLCV between test and prod")
+    parser.add_argument("--glossary", action="store_true",
+                        help="Show the indicator glossary from MongoDB")
     args = parser.parse_args()
 
-    if args.compare:
+    if args.glossary:
+        query_glossary(args.test)
+    elif args.compare:
         compare_collections(args.symbol, args.timeframe, args.limit)
     else:
         query_latest(args.symbol, args.timeframe, args.test, args.limit)

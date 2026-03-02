@@ -7,7 +7,7 @@ import pandas as pd
 from pymongo import MongoClient, UpdateOne, DESCENDING
 from dotenv import load_dotenv
 
-from .config import get_collection_name, get_db_name, SLIDING_WINDOW
+from .config import get_collection_name, get_db_name, SLIDING_WINDOW, METADATA_COLLECTION
 
 load_dotenv()
 
@@ -93,3 +93,23 @@ def ensure_indexes(symbol: str, timeframe: str, test: bool = False):
     """Create a unique ascending index on timestamp if it doesn't exist."""
     coll = get_collection(symbol, timeframe, test)
     coll.create_index("timestamp", unique=True)
+
+
+def upsert_indicator_glossary(test: bool = False):
+    """Upsert the indicator glossary document into the metadata collection.
+
+    Uses a lazy import of get_glossary_document from indicators to avoid
+    circular imports (indicators imports nothing from db).
+    """
+    from .indicators import get_glossary_document
+
+    doc = get_glossary_document()
+    db = get_db(test)
+    coll = db[METADATA_COLLECTION]
+    coll.update_one(
+        {"_id": doc["_id"]},
+        {"$set": doc},
+        upsert=True,
+    )
+    print(f"[glossary] Synced indicator glossary to "
+          f"{'test' if test else 'prod'}.{METADATA_COLLECTION}")

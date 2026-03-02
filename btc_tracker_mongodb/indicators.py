@@ -4,13 +4,738 @@ indicators.py — Single source of truth for ALL technical indicator computation
 Accepts an OHLCV DataFrame (columns: Open, High, Low, Close, Volume),
 returns the same DataFrame enriched with indicator columns.
 
-See docs/INDICATORS.md for the full glossary (descriptions, ranges, parameters).
-When adding/removing columns, update get_numeric_cols() AND docs/INDICATORS.md.
+INDICATOR_GLOSSARY is the canonical reference for every column. When adding,
+removing, or renaming an indicator, update the glossary dict below —
+get_numeric_cols() derives from it automatically.  Also update the human-
+readable glossary at docs/INDICATORS.md.
 """
+
+import hashlib
+import json
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
 import pandas_ta_classic as ta
+
+
+# ---------------------------------------------------------------------------
+# Indicator Glossary — single source of truth for column metadata
+# ---------------------------------------------------------------------------
+
+CATEGORY_ORDER = [
+    "Trend", "Momentum", "Volume", "Volatility", "Price Levels",
+    "Custom", "Log Returns", "Temporal", "ML Features", "Sentiment",
+]
+
+INDICATOR_GLOSSARY: dict[str, dict] = {
+    # ── Trend ──────────────────────────────────────────────────────────────
+    "SMA_50": {
+        "name": "Simple Moving Average",
+        "category": "Trend",
+        "parameters": "50-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Average closing price over the last 50 bars. Smooths noise; acts as dynamic support/resistance.",
+    },
+    "SMA_100": {
+        "name": "Simple Moving Average",
+        "category": "Trend",
+        "parameters": "100-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Medium-term trend filter. Price above = bullish bias.",
+    },
+    "SMA_200": {
+        "name": "Simple Moving Average",
+        "category": "Trend",
+        "parameters": "200-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Long-term trend benchmark. The bull/bear market dividing line.",
+    },
+    "EMA_20": {
+        "name": "Exponential Moving Average",
+        "category": "Trend",
+        "parameters": "20-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Fast trend tracker. Weights recent prices more than SMA.",
+    },
+    "EMA_50": {
+        "name": "Exponential Moving Average",
+        "category": "Trend",
+        "parameters": "50-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Medium trend. Crossovers with EMA_20 signal momentum shifts.",
+    },
+    "EMA_100": {
+        "name": "Exponential Moving Average",
+        "category": "Trend",
+        "parameters": "100-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Intermediate trend filter between 50 and 200.",
+    },
+    "EMA_200": {
+        "name": "Exponential Moving Average",
+        "category": "Trend",
+        "parameters": "200-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Long-term EMA. More responsive than SMA_200 to recent data.",
+    },
+    "Ichimoku_Conversion": {
+        "name": "Ichimoku Tenkan-sen",
+        "category": "Trend",
+        "parameters": "9-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Short-term midpoint: (9-period high + 9-period low) / 2. Signals short-term momentum.",
+    },
+    "Ichimoku_Base": {
+        "name": "Ichimoku Kijun-sen",
+        "category": "Trend",
+        "parameters": "26-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Medium-term midpoint. Acts as support/resistance; flat = ranging market.",
+    },
+    "Ichimoku_A": {
+        "name": "Ichimoku Senkou Span A",
+        "category": "Trend",
+        "parameters": "(9+26)/2",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Leading span A of the cloud. Midpoint of Conversion and Base, projected forward.",
+    },
+    "Ichimoku_B": {
+        "name": "Ichimoku Senkou Span B",
+        "category": "Trend",
+        "parameters": "52-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Leading span B. Slowest cloud component; defines cloud thickness.",
+    },
+    "ADX_14": {
+        "name": "Average Directional Index",
+        "category": "Trend",
+        "parameters": "14-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Measures trend strength (not direction). <20 = weak/no trend, >25 = trending, >50 = strong trend.",
+    },
+    "DI_Plus_14": {
+        "name": "Positive Directional Indicator",
+        "category": "Trend",
+        "parameters": "14-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Measures upward movement strength. DI+ > DI- suggests bullish pressure.",
+    },
+    "DI_Minus_14": {
+        "name": "Negative Directional Indicator",
+        "category": "Trend",
+        "parameters": "14-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Measures downward movement strength. DI- > DI+ suggests bearish pressure.",
+    },
+    "Supertrend_Value": {
+        "name": "Supertrend Line",
+        "category": "Trend",
+        "parameters": "length=7, mult=3.0",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "ATR-based trailing stop line. Price above = uptrend, below = downtrend.",
+    },
+    "Supertrend_Direction": {
+        "name": "Supertrend Direction",
+        "category": "Trend",
+        "parameters": "length=7, mult=3.0",
+        "range": "-1 or +1",
+        "dtype": "numeric",
+        "description": "Binary trend signal: +1 = uptrend, -1 = downtrend. Directly actionable.",
+    },
+    "KAMA_10": {
+        "name": "Kaufman Adaptive Moving Average",
+        "category": "Trend",
+        "parameters": "10-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Adapts speed to volatility: fast in trends, flat in chop. Superior noise filtering vs SMA/EMA.",
+    },
+    "HMA_20": {
+        "name": "Hull Moving Average",
+        "category": "Trend",
+        "parameters": "20-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Dramatically reduced lag while remaining smooth. Uses weighted MA of WMAs.",
+    },
+    "PSAR": {
+        "name": "Parabolic SAR",
+        "category": "Trend",
+        "parameters": "default af/max",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Trend-following trailing stop. Dots flip above/below price on trend reversal.",
+    },
+    "Aroon_Up": {
+        "name": "Aroon Up",
+        "category": "Trend",
+        "parameters": "25-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Measures bars since highest high. 100 = new high just made, 0 = no new high in 25 bars.",
+    },
+    "Aroon_Down": {
+        "name": "Aroon Down",
+        "category": "Trend",
+        "parameters": "25-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Measures bars since lowest low. 100 = new low just made.",
+    },
+    "Aroon_Osc": {
+        "name": "Aroon Oscillator",
+        "category": "Trend",
+        "parameters": "25-period",
+        "range": "-100 to +100",
+        "dtype": "numeric",
+        "description": "Aroon_Up minus Aroon_Down. Positive = bullish trend inception, negative = bearish.",
+    },
+
+    # ── Momentum ───────────────────────────────────────────────────────────
+    "RSI": {
+        "name": "Relative Strength Index",
+        "category": "Momentum",
+        "parameters": "14-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Measures speed/magnitude of price changes. >70 = overbought, <30 = oversold.",
+    },
+    "Stoch_RSI_K": {
+        "name": "Stochastic RSI %K",
+        "category": "Momentum",
+        "parameters": "length=14, K=3, D=3",
+        "range": "0-1",
+        "dtype": "numeric",
+        "description": "Stochastic oscillator applied to RSI. More sensitive than raw RSI. Normalized to [0,1].",
+    },
+    "Stoch_RSI_D": {
+        "name": "Stochastic RSI %D",
+        "category": "Momentum",
+        "parameters": "length=14, K=3, D=3",
+        "range": "0-1",
+        "dtype": "numeric",
+        "description": "Signal line (3-period SMA of %K). K crossing above D = bullish, below = bearish.",
+    },
+    "Stoch_K": {
+        "name": "Stochastic %K",
+        "category": "Momentum",
+        "parameters": "K=14, D=3",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Raw price stochastic — where close sits within the high-low range. Separate from StochRSI.",
+    },
+    "Stoch_D": {
+        "name": "Stochastic %D",
+        "category": "Momentum",
+        "parameters": "K=14, D=3",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Signal line for Stochastic. Crossovers generate buy/sell signals.",
+    },
+    "MACD_Line": {
+        "name": "MACD",
+        "category": "Momentum",
+        "parameters": "fast=12, slow=26",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Difference between 12-period and 26-period EMA. Positive = bullish momentum.",
+    },
+    "MACD_Signal": {
+        "name": "MACD Signal Line",
+        "category": "Momentum",
+        "parameters": "signal=9",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "9-period EMA of MACD Line. MACD crossing above Signal = bullish crossover.",
+    },
+    "MACD_Histogram": {
+        "name": "MACD Histogram",
+        "category": "Momentum",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "MACD Line minus Signal Line. Measures momentum acceleration/deceleration.",
+    },
+    "Williams_R_14": {
+        "name": "Williams %R",
+        "category": "Momentum",
+        "parameters": "14-period",
+        "range": "-100 to 0",
+        "dtype": "numeric",
+        "description": "Where close sits relative to the 14-period high-low range. >-20 = overbought, <-80 = oversold.",
+    },
+    "CCI_20": {
+        "name": "Commodity Channel Index",
+        "category": "Momentum",
+        "parameters": "20-period",
+        "range": "Unbounded (typically -200 to +200)",
+        "dtype": "numeric",
+        "description": "Measures price deviation from its statistical mean. >+100 = overbought, <-100 = oversold.",
+    },
+    "TRIX_18": {
+        "name": "TRIX",
+        "category": "Momentum",
+        "parameters": "18-period",
+        "range": "Unbounded (small)",
+        "dtype": "numeric",
+        "description": "Rate-of-change of triple-smoothed EMA. Filters out insignificant price moves; cleaner than ROC.",
+    },
+
+    # ── Volume ─────────────────────────────────────────────────────────────
+    "OBV": {
+        "name": "On-Balance Volume",
+        "category": "Volume",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Running total: adds volume on up-closes, subtracts on down-closes. Confirms/diverges price trend.",
+    },
+    "CMF_20": {
+        "name": "Chaikin Money Flow",
+        "category": "Volume",
+        "parameters": "20-period",
+        "range": "-1 to +1",
+        "dtype": "numeric",
+        "description": "Measures buying vs selling pressure using close position within the high-low range, weighted by volume.",
+    },
+    "MFI_14": {
+        "name": "Money Flow Index",
+        "category": "Volume",
+        "parameters": "14-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Volume-weighted RSI — combines price and volume for overbought/oversold signals. >80 = overbought, <20 = oversold.",
+    },
+
+    # ── Volatility ─────────────────────────────────────────────────────────
+    "BB_High": {
+        "name": "Bollinger Band Upper",
+        "category": "Volatility",
+        "parameters": "20-period, 2 std",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Upper band: SMA(20) + 2 standard deviations. Price touching = potentially overbought.",
+    },
+    "BB_Low": {
+        "name": "Bollinger Band Lower",
+        "category": "Volatility",
+        "parameters": "20-period, 2 std",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Lower band: SMA(20) - 2 standard deviations. Price touching = potentially oversold.",
+    },
+    "Donchian_High": {
+        "name": "Donchian Channel Upper",
+        "category": "Volatility",
+        "parameters": "20-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Highest high over the last 20 bars. Breakout above = bullish signal.",
+    },
+    "Donchian_Low": {
+        "name": "Donchian Channel Lower",
+        "category": "Volatility",
+        "parameters": "20-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Lowest low over the last 20 bars. Breakout below = bearish signal.",
+    },
+    "Donchian_Mid": {
+        "name": "Donchian Channel Midline",
+        "category": "Volatility",
+        "parameters": "20-period",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Midpoint of upper and lower Donchian bands. Dynamic support/resistance.",
+    },
+    "ATR_14": {
+        "name": "Average True Range",
+        "category": "Volatility",
+        "parameters": "14-period",
+        "range": "Price scale (absolute)",
+        "dtype": "numeric",
+        "description": "Measures average volatility in price units. Used for position sizing and stop placement.",
+    },
+    "NATR_14": {
+        "name": "Normalized ATR",
+        "category": "Volatility",
+        "parameters": "14-period",
+        "range": "0-100 (percentage)",
+        "dtype": "numeric",
+        "description": "ATR as a percentage of close price. Enables volatility comparison across tokens and timeframes.",
+    },
+    "Parkinson_Vol_14": {
+        "name": "Parkinson Volatility",
+        "category": "Volatility",
+        "parameters": "14-period",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "Volatility estimator using high-low range (more efficient than close-to-close).",
+    },
+    "Realized_Vol_14": {
+        "name": "Realized Volatility",
+        "category": "Volatility",
+        "parameters": "14-period",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "Annualized standard deviation of log returns over 14 bars.",
+    },
+    "Realized_Vol_30": {
+        "name": "Realized Volatility",
+        "category": "Volatility",
+        "parameters": "30-period",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "Annualized standard deviation of log returns over 30 bars. Smoother, longer-term view.",
+    },
+    "Vol_Ratio_14_30": {
+        "name": "Volatility Ratio",
+        "category": "Volatility",
+        "parameters": "14/30",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "Short-term vol divided by long-term vol. >1 = volatility expanding, <1 = contracting. Regime signal.",
+    },
+    "CHOP_14": {
+        "name": "Choppiness Index",
+        "category": "Volatility",
+        "parameters": "14-period",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Classifies market regime. >61.8 = choppy/ranging, <38.2 = trending. Based on ATR vs Donchian range.",
+    },
+    "Squeeze_Flag": {
+        "name": "Squeeze Indicator",
+        "category": "Volatility",
+        "parameters": "default",
+        "range": "0 or 1",
+        "dtype": "numeric",
+        "description": "1 = Bollinger Bands inside Keltner Channels (squeeze is on). Precedes explosive moves.",
+    },
+    "Squeeze_Momentum": {
+        "name": "Squeeze Momentum Value",
+        "category": "Volatility",
+        "parameters": "default",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Momentum magnitude during/after a squeeze. Positive = bullish momentum, negative = bearish.",
+    },
+
+    # ── Price Levels ───────────────────────────────────────────────────────
+    "VWAP": {
+        "name": "Volume Weighted Average Price",
+        "category": "Price Levels",
+        "parameters": "Rolling 24-bar (intraday) / cumulative (daily)",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Average price weighted by volume. Institutional benchmark — price above VWAP = bullish intraday bias.",
+    },
+    "Fib_236": {
+        "name": "Fibonacci 23.6% Retracement",
+        "category": "Price Levels",
+        "parameters": "50-period rolling",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Shallowest Fibonacci level. Strong trend pullbacks often find support here.",
+    },
+    "Fib_382": {
+        "name": "Fibonacci 38.2% Retracement",
+        "category": "Price Levels",
+        "parameters": "50-period rolling",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Common retracement in trending markets. Often the first meaningful support/resistance.",
+    },
+    "Fib_500": {
+        "name": "Fibonacci 50% Retracement",
+        "category": "Price Levels",
+        "parameters": "50-period rolling",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Psychological midpoint of the range. Not a true Fibonacci number but widely watched.",
+    },
+    "Fib_618": {
+        "name": "Fibonacci 61.8% Retracement",
+        "category": "Price Levels",
+        "parameters": "50-period rolling",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "The golden ratio level. Deep retracement; often the last defense before trend reversal.",
+    },
+    "Fib_100": {
+        "name": "Fibonacci 100% (Range Low)",
+        "category": "Price Levels",
+        "parameters": "50-period rolling",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Bottom of the 50-period range. Full retracement level.",
+    },
+
+    # ── Custom ─────────────────────────────────────────────────────────────
+    "HDPR_MA": {
+        "name": "HDPR Moving Average",
+        "category": "Custom",
+        "parameters": "50-period (reuses SMA_50)",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Mean-reversion reference line. Equal to SMA_50.",
+    },
+    "HDPR_Distance": {
+        "name": "HDPR Distance",
+        "category": "Custom",
+        "parameters": "-",
+        "range": "Unbounded (fraction)",
+        "dtype": "numeric",
+        "description": "(Close - SMA_50) / SMA_50. Measures percentage deviation from the 50-period mean.",
+    },
+    "HDPR_Signal": {
+        "name": "HDPR Signal",
+        "category": "Custom",
+        "parameters": "threshold=3%",
+        "range": "-1, 0, or +1",
+        "dtype": "numeric",
+        "description": "Mean-reversion signal: +1 = price >3% below MA (buy), -1 = price >3% above MA (sell), 0 = neutral.",
+    },
+
+    # ── Log Returns ────────────────────────────────────────────────────────
+    "LogReturn_1": {
+        "name": "1-period Log Return",
+        "category": "Log Returns",
+        "parameters": "-",
+        "range": "Unbounded (small)",
+        "dtype": "numeric",
+        "description": "ln(Close / Close[-1]). Single-bar return. Approximately symmetric and additive.",
+    },
+    "LogReturn_4": {
+        "name": "4-period Log Return",
+        "category": "Log Returns",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Return over 4 bars. For 1h data = 4-hour return.",
+    },
+    "LogReturn_12": {
+        "name": "12-period Log Return",
+        "category": "Log Returns",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Return over 12 bars. For 1h data = 12-hour return.",
+    },
+    "LogReturn_24": {
+        "name": "24-period Log Return",
+        "category": "Log Returns",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Return over 24 bars. For 1h data = daily return.",
+    },
+
+    # ── Temporal ───────────────────────────────────────────────────────────
+    "Hour_Sin": {
+        "name": "Hour of Day (sine)",
+        "category": "Temporal",
+        "parameters": "-",
+        "range": "-1 to +1",
+        "dtype": "numeric",
+        "description": "Cyclical encoding of hour: sin(2pi * hour / 24). Captures time-of-day seasonality for ML.",
+    },
+    "Hour_Cos": {
+        "name": "Hour of Day (cosine)",
+        "category": "Temporal",
+        "parameters": "-",
+        "range": "-1 to +1",
+        "dtype": "numeric",
+        "description": "Cyclical encoding of hour: cos(2pi * hour / 24). Paired with sine for full representation.",
+    },
+    "DOW_Sin": {
+        "name": "Day of Week (sine)",
+        "category": "Temporal",
+        "parameters": "-",
+        "range": "-1 to +1",
+        "dtype": "numeric",
+        "description": "Cyclical encoding of weekday: sin(2pi * dow / 7). Captures weekly seasonality.",
+    },
+    "DOW_Cos": {
+        "name": "Day of Week (cosine)",
+        "category": "Temporal",
+        "parameters": "-",
+        "range": "-1 to +1",
+        "dtype": "numeric",
+        "description": "Cyclical encoding of weekday: cos(2pi * dow / 7).",
+    },
+
+    # ── ML Features ────────────────────────────────────────────────────────
+    "Close_ZScore_100": {
+        "name": "Close Price Z-Score",
+        "category": "ML Features",
+        "parameters": "100-period",
+        "range": "Unbounded (typically -3 to +3)",
+        "dtype": "numeric",
+        "description": "(Close - rolling_mean) / rolling_std. Makes price stationary. >+2 = unusually high, <-2 = unusually low.",
+    },
+    "RSI_ZScore_100": {
+        "name": "RSI Z-Score",
+        "category": "ML Features",
+        "parameters": "100-period",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Standardizes RSI relative to its own recent history. Detects when RSI itself is at extremes.",
+    },
+    "Volume_ZScore_100": {
+        "name": "Volume Z-Score",
+        "category": "ML Features",
+        "parameters": "100-period",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Detects anomalous volume spikes. >+2 = unusually high volume event.",
+    },
+    "Candle_Body_Ratio": {
+        "name": "Candle Body Size",
+        "category": "ML Features",
+        "parameters": "ATR-normalized",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "abs(Close - Open) / ATR_14. Large body = strong conviction; small body = indecision.",
+    },
+    "Upper_Wick_Ratio": {
+        "name": "Upper Wick Size",
+        "category": "ML Features",
+        "parameters": "ATR-normalized",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "(High - max(Open,Close)) / ATR_14. Large upper wick = selling rejection from above.",
+    },
+    "Lower_Wick_Ratio": {
+        "name": "Lower Wick Size",
+        "category": "ML Features",
+        "parameters": "ATR-normalized",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "(min(Open,Close) - Low) / ATR_14. Large lower wick = buying rejection from below.",
+    },
+    "Price_vs_EMA20": {
+        "name": "Price Distance from EMA 20",
+        "category": "ML Features",
+        "parameters": "ATR-normalized",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "(Close - EMA_20) / ATR_14. Positive = above EMA, negative = below. Continuous HDPR alternative.",
+    },
+    "Price_vs_SMA200": {
+        "name": "Price Distance from SMA 200",
+        "category": "ML Features",
+        "parameters": "ATR-normalized",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "(Close - SMA_200) / ATR_14. Macro trend positioning — how extended price is from long-term average.",
+    },
+    "BB_Width": {
+        "name": "Bollinger Band Width",
+        "category": "ML Features",
+        "parameters": "-",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "(BB_High - BB_Low) / Close. Squeeze proxy: low width = compression, high = expansion.",
+    },
+    "RSI_Slope_3": {
+        "name": "RSI 3-bar Slope",
+        "category": "ML Features",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "RSI.diff(3). Positive = RSI accelerating upward, negative = decelerating. Momentum direction.",
+    },
+    "MACD_Slope_3": {
+        "name": "MACD Histogram 3-bar Slope",
+        "category": "ML Features",
+        "parameters": "-",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "MACD_Histogram.diff(3). Positive = momentum strengthening, negative = weakening.",
+    },
+
+    # ── Sentiment ──────────────────────────────────────────────────────────
+    "FnG_Value": {
+        "name": "Fear & Greed Index",
+        "category": "Sentiment",
+        "parameters": "-",
+        "range": "0-100",
+        "dtype": "numeric",
+        "description": "Crypto Fear & Greed Index. 0 = Extreme Fear, 100 = Extreme Greed. Daily resolution.",
+    },
+    "FnG_Class": {
+        "name": "Fear & Greed Classification",
+        "category": "Sentiment",
+        "parameters": "-",
+        "range": "5 categories",
+        "dtype": "string",
+        "description": "Classification: Extreme Fear, Fear, Neutral, Greed, Extreme Greed. null if API unreachable.",
+    },
+}
+
+
+def get_glossary_document() -> dict:
+    """Build the MongoDB metadata document from INDICATOR_GLOSSARY.
+
+    Returns a dict ready for upsert into the indicator_metadata collection.
+    The schema_hash (SHA-256 of sorted column names) lets downstream consumers
+    cheaply detect schema changes without diffing the full document.
+    """
+    numeric_cols = sorted(
+        k for k, v in INDICATOR_GLOSSARY.items() if v["dtype"] == "numeric"
+    )
+    string_cols = sorted(
+        k for k, v in INDICATOR_GLOSSARY.items() if v["dtype"] == "string"
+    )
+    all_cols = sorted(INDICATOR_GLOSSARY.keys())
+
+    schema_hash = hashlib.sha256(
+        json.dumps(all_cols, sort_keys=True).encode()
+    ).hexdigest()
+
+    # Build category summary with deterministic ordering
+    cat_map: dict[str, list[str]] = {}
+    for col, meta in INDICATOR_GLOSSARY.items():
+        cat_map.setdefault(meta["category"], []).append(col)
+
+    categories = []
+    for cat in CATEGORY_ORDER:
+        if cat in cat_map:
+            categories.append({
+                "name": cat,
+                "columns": sorted(cat_map[cat]),
+                "count": len(cat_map[cat]),
+            })
+
+    return {
+        "_id": "indicator_glossary",
+        "version": 1,
+        "schema_hash": schema_hash,
+        "updated_at": datetime.now(timezone.utc),
+        "total_numeric": len(numeric_cols),
+        "total_string": len(string_cols),
+        "total_columns": len(all_cols),
+        "base_columns": ["Open", "High", "Low", "Close", "Volume", "timestamp"],
+        "categories": categories,
+        "indicators": dict(INDICATOR_GLOSSARY),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -66,72 +791,16 @@ def compute_all(df: pd.DataFrame, timeframe: str = "1h") -> pd.DataFrame:
 
 
 def get_numeric_cols() -> list[str]:
-    """Column names used for NaN validation (all numeric indicator columns)."""
+    """Column names used for NaN validation (all numeric indicator columns).
+
+    Derived from INDICATOR_GLOSSARY — excludes FnG_Value because it is
+    nullable (filled per-pipeline-run, not per-row) and should not cause
+    a row to be dropped during NaN validation.
+    """
+    _EXCLUDE = {"FnG_Value"}
     return [
-        # Moving averages
-        "SMA_50", "SMA_100", "SMA_200",
-        "EMA_20", "EMA_50", "EMA_100", "EMA_200",
-        # Momentum
-        "RSI", "Stoch_RSI_K", "Stoch_RSI_D",
-        # Bollinger Bands
-        "BB_High", "BB_Low",
-        # Ichimoku
-        "Ichimoku_Conversion", "Ichimoku_Base", "Ichimoku_A", "Ichimoku_B",
-        # MACD
-        "MACD_Line", "MACD_Signal", "MACD_Histogram",
-        # Donchian
-        "Donchian_High", "Donchian_Low", "Donchian_Mid",
-        # ATR
-        "ATR_14",
-        # ADX
-        "ADX_14", "DI_Plus_14", "DI_Minus_14",
-        # VWAP
-        "VWAP",
-        # Williams %R
-        "Williams_R_14",
-        # CCI
-        "CCI_20",
-        # Log returns
-        "LogReturn_1", "LogReturn_4", "LogReturn_12", "LogReturn_24",
-        # Parkinson volatility
-        "Parkinson_Vol_14",
-        # Realized volatility
-        "Realized_Vol_14", "Realized_Vol_30",
-        # Volatility ratio
-        "Vol_Ratio_14_30",
-        # Fibonacci
-        "Fib_236", "Fib_382", "Fib_500", "Fib_618", "Fib_100",
-        # HDPR
-        "HDPR_MA", "HDPR_Distance", "HDPR_Signal",
-        # Temporal
-        "Hour_Sin", "Hour_Cos", "DOW_Sin", "DOW_Cos",
-        # --- Tier 1 ---
-        "OBV",
-        "CMF_20",
-        "MFI_14",
-        "Supertrend_Direction", "Supertrend_Value",
-        "NATR_14",
-        "KAMA_10",
-        "CHOP_14",
-        # --- Tier 2 ---
-        "Squeeze_Flag", "Squeeze_Momentum",
-        "Aroon_Up", "Aroon_Down", "Aroon_Osc",
-        "HMA_20",
-        "PSAR",
-        "Stoch_K", "Stoch_D",
-        "TRIX_18",
-        # --- ML features ---
-        "Close_ZScore_100",
-        "RSI_ZScore_100",
-        "Volume_ZScore_100",
-        "Candle_Body_Ratio",
-        "Upper_Wick_Ratio",
-        "Lower_Wick_Ratio",
-        "Price_vs_EMA20",
-        "Price_vs_SMA200",
-        "BB_Width",
-        "RSI_Slope_3",
-        "MACD_Slope_3",
+        col for col, meta in INDICATOR_GLOSSARY.items()
+        if meta["dtype"] == "numeric" and col not in _EXCLUDE
     ]
 
 
