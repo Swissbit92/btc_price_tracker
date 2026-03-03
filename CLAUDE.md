@@ -140,3 +140,25 @@ Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env v
 - VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily.
 - `compute_all()` takes a `timeframe` parameter ("1h", "4h", "1d") that affects VWAP calculation.
 - Migration status tracked in `docs/MIGRATION.md`.
+
+## MCP Server (`mcp_server.py`)
+
+Read-only MCP server that exposes MongoDB data to Claude Code via 6 tools. Registered in `.mcp.json` — auto-discovered when Claude Code opens the project.
+
+### Tools
+
+| Tool | Purpose |
+|------|---------|
+| `list_collections()` | List all 39 token/timeframe/collection combos (no DB call) |
+| `query_price_data(symbol, timeframe, limit, fields)` | Latest N docs, optional field filtering |
+| `get_latest_price(symbol, timeframe)` | Single most recent document |
+| `get_indicator_glossary()` | Fetch indicator glossary from metadata collection |
+| `get_collection_stats(symbol, timeframe)` | Doc count, date range, column list |
+| `query_by_date_range(symbol, start_date, end_date, timeframe, fields, limit)` | Query within a date range (chronological) |
+
+All tools accept flexible symbol input (`"BTC"`, `"btc"`, or `"BTC-USDT"`) and return JSON. Errors are returned as `{"error": "message"}` so Claude can reason about failures.
+
+### Dependencies
+
+- `mcp` (Python MCP SDK) — added to `requirements.txt`
+- Reuses `get_collection()`, `get_db()` from `db.py` and config constants

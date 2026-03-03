@@ -7,3 +7,4 @@ pandas
 pandas-ta-classic
 numpy
 requests
+mcp

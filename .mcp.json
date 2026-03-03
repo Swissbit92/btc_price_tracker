@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "crypto-tracker": {
+      "command": "Scripts/python.exe",
+      "args": ["mcp_server.py"]
+    }
+  }
+}
