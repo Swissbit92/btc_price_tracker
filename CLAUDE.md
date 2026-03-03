@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB** (USDT pairs) from KuCoin via CCXT, computes ~79 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~79 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
 
 ## Commands
 
@@ -77,16 +77,16 @@ All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):
 
 - Database: `btc_data` (production), `btc_data_test` (testing)
 - Collection naming: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data`
-  - e.g. `btc_1h_price_data`, `eth_4h_price_data`, `sol_daily_price_data`, `bnb_1h_price_data`
+  - e.g. `btc_1h_price_data`, `eth_4h_price_data`, `sol_daily_price_data`, `doge_1h_price_data`
 - Each document is keyed by `timestamp` (UTC datetime); unique index enforced
-- 5 tokens x 3 timeframes = 15 collections total
+- 13 tokens x 3 timeframes = 39 collections total
 - `indicator_metadata` collection: stores a single `indicator_glossary` document with column descriptions, categories, ranges, and a `schema_hash` for change detection. Auto-synced on every pipeline run.
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
 | File | Purpose |
 |---|---|
-| `config.py` | Central config: TOKENS (5), TIMEFRAMES (3), DB names, collection name mapping |
+| `config.py` | Central config: TOKENS (13), TIMEFRAMES (3), DB names, collection name mapping |
 | `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, bulk_upsert, ensure_indexes, upsert_indicator_glossary |
 | `extract.py` | CCXT-based KuCoin data fetching: fetch_candles, fetch_seed_candles |
 | `indicators.py` | Single source of truth for ~79 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY, get_glossary_document() |

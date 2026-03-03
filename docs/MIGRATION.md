@@ -311,12 +311,50 @@ python update.py --all --test
 
 ---
 
+## Phase E: Token Expansion (5 → 13 tokens)
+
+> **Goal:** Expand from 5 tokens to 13 by adding DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR.
+
+### E1. Token selection research
+- [x] Evaluated 40+ sources (CoinGecko, CryptoSlate, TradingView, KuCoin reports, Grayscale, ARK Invest)
+- [x] Ranked by profit proxy: daily swing % x TA signal reliability x liquidity depth
+- [x] All 8 candidates verified on KuCoin via CCXT
+- [x] Timeframe fitness confirmed: all 8 tokens outperform BNB (lowest existing) on avg candle swing %
+
+### E2. Implementation
+- [x] Added 8 tokens to `TOKENS` in `config.py` (5 → 13)
+- [x] No workflow changes needed — all 3 GitHub Actions use `--all` flag
+
+### E3. Seeding
+- [x] All 8 tokens seeded across all 3 timeframes (24 seed operations)
+- [x] Every seed: 500 candles fetched, 301 docs after NaN warmup drop
+- [x] Indicator glossary auto-synced to `indicator_metadata` on each seed
+
+### E4. Verification
+- [x] Incremental update test: `update.py --all --timeframe 1h` — all 13 tokens OK
+- [x] 39 collections live in production (13 tokens x 3 timeframes)
+
+### Tokens added
+| Token | Symbol | Sector | Rationale |
+|-------|--------|--------|-----------|
+| Dogecoin | DOGE-USDT | Meme/Payments | Highest volume outside existing set, excellent RSI/MACD responsiveness |
+| Avalanche | AVAX-USDT | L1 DeFi | KuCoin-endorsed, clean Ichimoku/Supertrend signals |
+| Chainlink | LINK-USDT | Oracle/RWA | Massive volume, strong Fib/BB signals |
+| Cardano | ADA-USDT | L1 | Consistent top-10, large TA community |
+| SUI | SUI-USDT | L1 (Move) | Fastest-growing L1, highest Tier 1 swing % |
+| Toncoin | TON-USDT | Social/Telegram | Telegram ecosystem (800M users), KuCoin-endorsed |
+| Polkadot | DOT-USDT | Interop (L0) | CoinDesk 20 component, exceptional 4h/1d swings |
+| NEAR Protocol | NEAR-USDT | AI/L1 | Highest swing of all candidates, AI sector pivot |
+
+---
+
 ## Current Status
 
 **Phase A: COMPLETE** — All new modules created, requirements updated. All 7 test gates passed (2026-03-01).
 **Phase B: COMPLETE** — All 4 tokens seeded. 8/8 test gates passed (2026-03-01).
 **Phase C: IN PROGRESS** — C1-C4 done. 4/6 test gates passed. Remaining: C-TG5 (24h validation), C-TG6 (gap check). Then C5-C7 (downstream + cleanup).
 **Phase D: IN PROGRESS** — Code changes complete. Pending: test gates, seeding, validation.
+**Phase E: COMPLETE** — 8 new tokens added (5 → 13). All 39 collections seeded and verified (2026-03-03).
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).

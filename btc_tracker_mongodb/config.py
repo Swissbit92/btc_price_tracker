@@ -2,7 +2,9 @@
 config.py — Central configuration for the multi-token price tracker.
 """
 
-TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT"]
+TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT",
+          "DOGE-USDT", "AVAX-USDT", "LINK-USDT", "ADA-USDT", "SUI-USDT",
+          "TON-USDT", "DOT-USDT", "NEAR-USDT"]
 
 # internal name -> KuCoin API candle type
 TIMEFRAMES = {"1h": "1hour", "4h": "4hour", "1d": "1day"}
