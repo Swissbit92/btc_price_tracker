@@ -18,6 +18,7 @@ This project is written in **Python**, leveraging:
 - `pandas` + `pandas-ta-classic` for data handling and technical analysis
 - `pymongo` for seamless MongoDB integration
 - `numpy` for numerical computation
+- `mcp` for the read-only MCP server (Claude Code integration)
 
 Whether you’re building trading bots, dashboarding price signals, or exploring analytics, this tracker gives you a robust, extensible foundation — no local host required, zero manual intervention, and all data safely in the cloud.
 
@@ -133,7 +134,8 @@ Create a `.env` file in the project root:
   - `seed.py` — initial backfill (500 candles per token/timeframe)
   - `update.py` — incremental updates with gap detection
   - `btc_tracker_mongodb/indicators.py` — 78 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
-  - Dependencies: `ccxt`, `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`
+  - `mcp_server.py` — read-only MCP server for Claude Code integration (6 tools)
+  - Dependencies: `ccxt`, `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
 - **🔄 Automation & CI/CD**
   - **GitHub Actions**
@@ -146,6 +148,13 @@ Create a `.env` file in the project root:
 - **🔒 Secrets Management**
   - **GitHub Secrets**: `MONGODB_URI` (only secret needed — CCXT uses public endpoints)
   - **Local .env** for development
+
+- **🤖 MCP Server (Claude Code Integration)**
+  - `mcp_server.py` exposes 6 read-only tools for querying MongoDB directly from Claude Code conversations
+  - Registered via `.mcp.json` — auto-discovered when Claude Code opens the project
+  - Tools: `list_collections`, `query_price_data`, `get_latest_price`, `get_indicator_glossary`, `get_collection_stats`, `query_by_date_range`
+  - All tools accept flexible symbol input (`"BTC"`, `"btc"`, or `"BTC-USDT"`) and return JSON
+  - Uses stdio transport; reuses existing `db.py` connection and config constants
 
 - **✅ Resilience & Backfill**
   - Automatic gap detection backfills missed candles for all tokens
@@ -209,13 +218,29 @@ Create a `.env` file in the project root:
     ```
   - Incorporate signals (e.g. `HDPR_Signal`, `Williams_R_14`, `Vol_Ratio_14_30`) into your strategy logic.
 
-- **📦 Docker Usage**  
-  - Build & run via Docker (for local testing):  
+- **🤖 MCP Server (Claude Code)**
+  - The MCP server is auto-discovered by Claude Code via `.mcp.json` — no manual setup needed.
+  - Once connected, Claude Code can query your MongoDB data directly in conversation using 6 tools:
+
+    | Tool | What it does |
+    |------|-------------|
+    | `list_collections()` | Lists all 39 token/timeframe/collection combos |
+    | `query_price_data(symbol, timeframe, limit, fields)` | Latest N docs with optional field filtering |
+    | `get_latest_price(symbol, timeframe)` | Single most recent document (quick snapshot) |
+    | `get_indicator_glossary()` | Indicator descriptions, categories, and ranges |
+    | `get_collection_stats(symbol, timeframe)` | Doc count, date range, column list |
+    | `query_by_date_range(symbol, start, end, timeframe, fields, limit)` | Query within a date range |
+
+  - All tools accept flexible symbol input: `"BTC"`, `"btc"`, or `"BTC-USDT"` all work.
+  - Requires `MONGODB_URI` in `.env` (same as the rest of the project).
+
+- **📦 Docker Usage**
+  - Build & run via Docker (for local testing):
     ```bash
-    docker build -t btc-tracker .  
-    docker run --env-file .env btc-tracker  
-    ```  
-  - The container starts a Flask HTTP endpoint at port 8080 (used by Cloud Run).  
+    docker build -t btc-tracker .
+    docker run --env-file .env btc-tracker
+    ```
+  - The container starts a Flask HTTP endpoint at port 8080 (used by Cloud Run).
 
 Enjoy exploring and building on top of your live, cloud‐hosted Bitcoin price tracker!  
 
