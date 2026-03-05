@@ -14,7 +14,7 @@ The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted applicatio
 
 This project is written in **Python**, leveraging:
 
-- `ccxt` for KuCoin API access
+- `ccxt` (pinned to 4.5.40) for KuCoin API access
 - `pandas` + `pandas-ta-classic` for data handling and technical analysis
 - `pymongo` for seamless MongoDB integration
 - `numpy` for numerical computation
@@ -135,7 +135,7 @@ Create a `.env` file in the project root:
   - `update.py` — incremental updates with gap detection
   - `btc_tracker_mongodb/indicators.py` — 78 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
   - `mcp_server.py` — read-only MCP server for Claude Code integration (6 tools)
-  - Dependencies: `ccxt`, `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
+  - Dependencies: `ccxt` (pinned 4.5.40), `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
 - **🔄 Automation & CI/CD**
   - **GitHub Actions**

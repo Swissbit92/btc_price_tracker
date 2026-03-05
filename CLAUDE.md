@@ -134,6 +134,7 @@ Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env v
 - `pandas-ta-classic` is the TA library (not `pandas-ta` or `ta`). Import as `import pandas_ta_classic as ta`.
 - Fibonacci column names use underscores not dots: `Fib_236`, `Fib_382`, `Fib_500`, `Fib_618`, `Fib_100` (MongoDB rejects dots in field names).
 - StochRSI values are normalized to [0, 1] range (not [0, 100]).
+- `ccxt` is pinned to `4.5.40` in `requirements.txt` (v4.5.41 has a packaging bug). Bump the pin when a fixed release is available.
 - CCXT handles KuCoin rate limiting automatically (`enableRateLimit: True`).
 - Python version: 3.11 locally (venv) and in CI.
 - Fear & Greed API is free, no signup: `https://api.alternative.me/fng/`. Graceful fallback if unreachable.
