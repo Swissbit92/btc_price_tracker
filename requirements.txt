@@ -2,7 +2,7 @@ flask
 gunicorn
 pymongo[srv]
 python-dotenv
-ccxt
+ccxt==4.5.40
 pandas
 pandas-ta-classic
 numpy
