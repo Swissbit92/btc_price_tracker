@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~79 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
 
 ## Commands
 
@@ -89,12 +89,12 @@ All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):
 | `config.py` | Central config: TOKENS (13), TIMEFRAMES (3), DB names, collection name mapping |
 | `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, bulk_upsert, ensure_indexes, upsert_indicator_glossary |
 | `extract.py` | CCXT-based KuCoin data fetching: fetch_candles, fetch_seed_candles |
-| `indicators.py` | Single source of truth for ~79 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY, get_glossary_document() |
+| `indicators.py` | Single source of truth for ~85 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY, get_glossary_document() |
 | `sentiment.py` | Fear & Greed Index fetcher: fetch_fear_greed() with graceful fallback |
 | `pipeline.py` | Orchestration: run_seed, run_update, run_seed_from_csv, run_seed_all, run_update_all |
 | `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare and --glossary modes |
 
-### Technical Indicators (~79 numeric + 1 string column)
+### Technical Indicators (~85 numeric + 1 string column)
 
 Computed by `indicators.py` using `pandas-ta-classic`:
 
@@ -102,6 +102,7 @@ Computed by `indicators.py` using `pandas-ta-classic`:
 **Momentum:** RSI (14), Stochastic RSI (14, K=3, D=3), Stochastic (K=14, D=3), MACD (12, 26, 9), Williams %R (14), CCI (20), TRIX (18)
 **Volume:** OBV, CMF (20), MFI (14)
 **Volatility:** Bollinger Bands (20, 2sigma), BB Width, Donchian Channel (20), ATR (14), NATR (14), Parkinson Vol (14), Realized Vol (14, 30), Vol Ratio (14/30), Choppiness Index (14), Squeeze Momentum (flag + momentum)
+**Risk:** VaR (5th percentile, 50-period), CVaR (50-period), Omega Ratio (50-period), Tail Ratio (50-period), Ulcer Index (14-period), Kappa Ratio (order 3, 50-period)
 **Price levels:** Fibonacci retracement (rolling 50-period), VWAP (rolling 24-bar for intraday, cumulative for daily)
 **Custom:** HDPR (mean-reversion, SMA_50 reuse, 3% threshold)
 **ML Features:** Z-scores (Close/RSI/Volume, 100-period), Candle body/wick ratios (ATR-normalized), Price vs EMA20/SMA200 (ATR-normalized), RSI slope (3), MACD slope (3)

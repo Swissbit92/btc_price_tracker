@@ -91,6 +91,19 @@ Each document stored in MongoDB contains OHLCV fields (`Open`, `High`, `Low`, `C
 
 ---
 
+## Risk Indicators
+
+| Column | Indicator | Parameters | Range | Description |
+|---|---|---|---|---|
+| `VaR_5_50` | Value at Risk (5th percentile) | 50-period, 5th percentile | Unbounded (negative) | 5th percentile of rolling 50-period log returns. Estimates worst expected single-bar loss at 95% confidence. |
+| `CVaR_5_50` | Conditional VaR (Expected Shortfall) | 50-period, 5th percentile | Unbounded (negative) | Mean of log returns below the 5th percentile. Measures average loss in the worst 5% of outcomes — always <= VaR. |
+| `Omega_Ratio_50` | Omega Ratio | 50-period, threshold=0 | 0+ | Sum of positive returns / abs(sum of negative returns) over 50 bars. >1 = gains outweigh losses. Risk-reward quality metric. |
+| `Tail_Ratio_50` | Tail Ratio | 50-period | 0+ | 95th percentile / abs(5th percentile) of rolling 50-period returns. >1 = right tail fatter (positive skew), <1 = left tail fatter. |
+| `Ulcer_Index_14` | Ulcer Index | 14-period | 0+ | RMS of percentage drawdowns from rolling 14-period high. Higher = deeper/longer drawdowns. Pure downside risk measure. |
+| `Kappa_Ratio_50` | Kappa Ratio (order 3) | 50-period, order=3 | Unbounded | Mean return / cube-root of lower partial moment (order 3). Reward-to-downside-risk ratio that penalizes large losses cubically. |
+
+---
+
 ## Price Level Indicators
 
 | Column | Indicator | Parameters | Range | Description |
@@ -169,16 +182,17 @@ Each document stored in MongoDB contains OHLCV fields (`Open`, `High`, `Low`, `C
 
 | Category | Columns | Count |
 |---|---|---|
-| Trend | SMA x3, EMA x4, Ichimoku x4, ADX/DI x3, Supertrend x2, KAMA, HMA, PSAR, Aroon x3 | 21 |
+| Trend | SMA x3, EMA x4, Ichimoku x4, ADX/DI x3, Supertrend x2, KAMA, HMA, PSAR, Aroon x3 | 22 |
 | Momentum | RSI, StochRSI x2, Stoch x2, MACD x3, Williams %R, CCI, TRIX | 11 |
 | Volume | OBV, CMF, MFI | 3 |
 | Volatility | BB x2, Donchian x3, ATR, NATR, Parkinson, Realized x2, Vol Ratio, CHOP, Squeeze x2 | 14 |
+| Risk | VaR, CVaR, Omega, Tail Ratio, Ulcer Index, Kappa | 6 |
 | Price levels | VWAP, Fibonacci x5 | 6 |
 | Custom | HDPR x3 | 3 |
 | Log returns | 4 periods | 4 |
 | Temporal | Hour sin/cos, DOW sin/cos | 4 |
 | ML features | Z-scores x3, ratios x3, distances x2, BB Width, slopes x2 | 11 |
 | Sentiment | FnG_Value (numeric) | 1 |
-| **Total numeric** | | **78** |
+| **Total numeric** | | **85** |
 | Sentiment (string) | FnG_Class | 1 |
-| **Total stored per document** | 78 numeric + 1 string + 5 OHLCV + timestamp + _id | **86 fields** |
+| **Total stored per document** | 85 numeric + 1 string + 5 OHLCV + timestamp + _id | **93 fields** |

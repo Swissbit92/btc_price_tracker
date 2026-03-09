@@ -24,7 +24,7 @@ import pandas_ta_classic as ta
 # ---------------------------------------------------------------------------
 
 CATEGORY_ORDER = [
-    "Trend", "Momentum", "Volume", "Volatility", "Price Levels",
+    "Trend", "Momentum", "Volume", "Volatility", "Risk", "Price Levels",
     "Custom", "Log Returns", "Temporal", "ML Features", "Sentiment",
 ]
 
@@ -437,6 +437,56 @@ INDICATOR_GLOSSARY: dict[str, dict] = {
         "description": "Momentum magnitude during/after a squeeze. Positive = bullish momentum, negative = bearish.",
     },
 
+    # ── Risk ────────────────────────────────────────────────────────────────
+    "VaR_5_50": {
+        "name": "Value at Risk (5th percentile)",
+        "category": "Risk",
+        "parameters": "50-period, 5th percentile",
+        "range": "Unbounded (negative)",
+        "dtype": "numeric",
+        "description": "5th percentile of rolling 50-period log returns. Estimates worst expected single-bar loss at 95% confidence.",
+    },
+    "CVaR_5_50": {
+        "name": "Conditional VaR (Expected Shortfall)",
+        "category": "Risk",
+        "parameters": "50-period, 5th percentile",
+        "range": "Unbounded (negative)",
+        "dtype": "numeric",
+        "description": "Mean of log returns below the 5th percentile. Measures average loss in the worst 5% of outcomes — always <= VaR.",
+    },
+    "Omega_Ratio_50": {
+        "name": "Omega Ratio",
+        "category": "Risk",
+        "parameters": "50-period, threshold=0",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "Sum of positive returns / abs(sum of negative returns) over 50 bars. >1 = gains outweigh losses. Risk-reward quality metric.",
+    },
+    "Tail_Ratio_50": {
+        "name": "Tail Ratio",
+        "category": "Risk",
+        "parameters": "50-period",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "95th percentile / abs(5th percentile) of rolling 50-period returns. >1 = right tail fatter (positive skew), <1 = left tail fatter.",
+    },
+    "Ulcer_Index_14": {
+        "name": "Ulcer Index",
+        "category": "Risk",
+        "parameters": "14-period",
+        "range": "0+",
+        "dtype": "numeric",
+        "description": "RMS of percentage drawdowns from rolling 14-period high. Higher = deeper/longer drawdowns. Pure downside risk measure.",
+    },
+    "Kappa_Ratio_50": {
+        "name": "Kappa Ratio (order 3)",
+        "category": "Risk",
+        "parameters": "50-period, order=3",
+        "range": "Unbounded",
+        "dtype": "numeric",
+        "description": "Mean return / cube-root of lower partial moment (order 3). Reward-to-downside-risk ratio that penalizes large losses cubically.",
+    },
+
     # ── Price Levels ───────────────────────────────────────────────────────
     "VWAP": {
         "name": "Volume Weighted Average Price",
@@ -767,6 +817,7 @@ def compute_all(df: pd.DataFrame, timeframe: str = "1h") -> pd.DataFrame:
     _compute_parkinson_volatility(df)
     _compute_realized_volatility(df)
     _compute_volatility_ratio(df)
+    _compute_risk_metrics(df)
     _compute_fibonacci(df)
     _compute_hdpr(df)
     _compute_temporal_features(df)
@@ -1003,6 +1054,64 @@ def _compute_realized_volatility(df: pd.DataFrame):
 def _compute_volatility_ratio(df: pd.DataFrame):
     if "Realized_Vol_14" in df.columns and "Realized_Vol_30" in df.columns:
         df["Vol_Ratio_14_30"] = df["Realized_Vol_14"] / df["Realized_Vol_30"]
+
+
+# ---------------------------------------------------------------------------
+# Risk Metrics (VaR, CVaR, Omega, Tail Ratio, Ulcer Index, Kappa)
+# ---------------------------------------------------------------------------
+
+def _compute_risk_metrics(df: pd.DataFrame):
+    """Rolling risk/tail metrics derived from LogReturn_1 and Close."""
+    if "LogReturn_1" not in df.columns:
+        return
+
+    ret = df["LogReturn_1"]
+    window = 50
+
+    # --- VaR (5th percentile of returns) ---
+    df["VaR_5_50"] = ret.rolling(window).quantile(0.05)
+
+    # --- CVaR (Expected Shortfall) ---
+    def _cvar(x):
+        threshold = np.quantile(x, 0.05)
+        tail = x[x <= threshold]
+        return tail.mean() if len(tail) > 0 else threshold
+
+    df["CVaR_5_50"] = ret.rolling(window).apply(_cvar, raw=True)
+
+    # --- Omega Ratio ---
+    pos_sum = ret.clip(lower=0).rolling(window).sum()
+    neg_sum = ret.clip(upper=0).rolling(window).sum()
+    df["Omega_Ratio_50"] = pos_sum / neg_sum.abs()
+    # All positive returns -> neg_sum=0 -> inf; replace with NaN
+    df.loc[neg_sum == 0, "Omega_Ratio_50"] = np.nan
+
+    # --- Tail Ratio ---
+    q95 = ret.rolling(window).quantile(0.95)
+    q05 = ret.rolling(window).quantile(0.05)
+    df["Tail_Ratio_50"] = q95 / q05.abs()
+    # 5th percentile=0 -> division by zero; replace with NaN
+    df.loc[q05 == 0, "Tail_Ratio_50"] = np.nan
+
+    # --- Ulcer Index (14-period, based on Close prices) ---
+    ui_window = 14
+    rolling_max = df["Close"].rolling(ui_window).max()
+    drawdown_pct = (df["Close"] - rolling_max) / rolling_max * 100
+    df["Ulcer_Index_14"] = np.sqrt((drawdown_pct ** 2).rolling(ui_window).mean())
+
+    # --- Kappa Ratio (order 3) ---
+    mean_ret = ret.rolling(window).mean()
+
+    def _lpm3(x):
+        losses = np.minimum(x, 0)
+        return np.mean(losses ** 3)
+
+    lpm3 = ret.rolling(window).apply(_lpm3, raw=True)
+    # Cube root of negative LPM3 (losses cubed are negative)
+    safe_lpm3 = lpm3.replace(0, np.nan)
+    df["Kappa_Ratio_50"] = mean_ret / np.cbrt(safe_lpm3.abs())
+    # Sign: LPM3 of losses is negative, abs + cbrt makes denominator positive
+    # If all returns positive, LPM3=0 -> NaN (correct)
 
 
 # ---------------------------------------------------------------------------
