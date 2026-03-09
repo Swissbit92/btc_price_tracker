@@ -297,11 +297,12 @@ python update.py --all --test
 | Tier 2 new | +9 |
 | ML features | +11 |
 | Sentiment | +1 numeric (FnG_Value) + 1 string (FnG_Class) |
-| **Total** | **~79 numeric + 1 string** |
+| Risk metrics (Phase D2b) | +6 (VaR, CVaR, Omega, Tail Ratio, Ulcer Index, Kappa) |
+| **Total** | **~85 numeric + 1 string** |
 
 ### Phase D — Test Gate
 - [ ] **D-TG1: Import test** — All modules import without errors
-- [ ] **D-TG2: Indicator smoke test** — `compute_all()` on 300-row synthetic OHLCV produces ~79 expected columns
+- [ ] **D-TG2: Indicator smoke test** — `compute_all()` on 300-row synthetic OHLCV produces ~85 expected columns
 - [ ] **D-TG3: No NaN in tail** — Zero NaN in last 50 rows of all indicator columns
 - [ ] **D-TG4: Fear & Greed fetch** — `fetch_fear_greed()` returns valid data
 - [ ] **D-TG5: BNB CCXT fetch** — BNB-USDT candles fetch successfully for 1h, 4h, 1d

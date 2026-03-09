@@ -4,12 +4,12 @@
 
 ## 🚀 Project Overview
 
-The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches hourly, 4-hourly, and daily OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, and NEAR** (13 USDT pairs) from KuCoin via CCXT, computes a comprehensive suite of 78 technical indicators + ML features, fetches the Fear & Greed Index, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
+The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches hourly, 4-hourly, and daily OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, and NEAR** (13 USDT pairs) from KuCoin via CCXT, computes a comprehensive suite of 85 technical indicators + ML features, fetches the Fear & Greed Index, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
 
 - **Multi-Token Support**: Tracks 13 tokens across 1h, 4h, and daily timeframes (39 collections).
 - **Historical Seeding**: Backfills up to 500 candles per token/timeframe in one go.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
-- **78 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
+- **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
 - **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.
 
 This project is written in **Python**, leveraging:
@@ -133,7 +133,7 @@ Create a `.env` file in the project root:
 - **🐍 Processing Pipeline**
   - `seed.py` — initial backfill (500 candles per token/timeframe)
   - `update.py` — incremental updates with gap detection
-  - `btc_tracker_mongodb/indicators.py` — 78 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
+  - `btc_tracker_mongodb/indicators.py` — 85 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
   - `mcp_server.py` — read-only MCP server for Claude Code integration (6 tools)
   - Dependencies: `ccxt` (pinned 4.5.40), `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
