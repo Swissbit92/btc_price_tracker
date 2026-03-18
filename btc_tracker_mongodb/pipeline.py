@@ -6,7 +6,8 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 
 from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
-from .db import load_latest, get_latest_timestamp, bulk_upsert, ensure_indexes, upsert_indicator_glossary
+from .db import (load_latest, load_all, get_latest_timestamp,
+                 bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary)
 from .extract import fetch_candles, fetch_seed_candles
 from .indicators import compute_all, get_numeric_cols
 from .sentiment import fetch_fear_greed
@@ -208,6 +209,150 @@ def run_seed_all(timeframe: str = None, test: bool = False, count: int = SEED_WI
     for sym in TOKENS:
         for tf in timeframes:
             run_seed(sym, tf, test, count)
+
+
+def run_backfill(
+    symbol: str,
+    timeframe: str,
+    test: bool = False,
+    dry_run: bool = False,
+    since: str = None,
+):
+    """Deep historical backfill for a single token/timeframe.
+
+    Fetches max available history from KuCoin, merges with existing data,
+    recomputes all indicators, and upserts the full dataset.
+
+    Args:
+        since: Optional override start date as 'YYYY-MM-DD'. If not provided,
+               defaults to Oct 2017 for daily, Jan 2020 for 4h/1h.
+    """
+    _sync_glossary(test)
+    ensure_indexes(symbol, timeframe, test)
+
+    # Determine start date
+    if since:
+        since_dt = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    elif timeframe == "1d":
+        since_dt = datetime(2017, 10, 1, tzinfo=timezone.utc)
+    else:
+        since_dt = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+    print(f"[backfill] {symbol} {timeframe} (test={test}, dry_run={dry_run})")
+    print(f"[backfill] Fetching from {since_dt.date()} — this may take several minutes...")
+
+    # Step 1: Fetch all candles from KuCoin in an outer loop.
+    # fetch_candles() may stop early on partial batches, so we keep advancing
+    # the cursor and calling again until we've reached the present.
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    delta_ms = int(_timedelta_for(timeframe).total_seconds() * 1000)
+    cursor_ms = int(since_dt.timestamp() * 1000)
+    all_dfs = []
+    empty_streak = 0
+
+    while cursor_ms < now_ms:
+        df_batch = fetch_candles(symbol, timeframe, cursor_ms, limit=1500)
+        if df_batch.empty:
+            # Jump forward 180 days and retry (tokens may be listed years after start date)
+            cursor_ms += 180 * 86_400_000
+            empty_streak += 1
+            if empty_streak >= 20:
+                break  # Exhausted search range — stop
+            continue
+        empty_streak = 0
+        all_dfs.append(df_batch)
+        last_ts_ms = int(df_batch.index.max().timestamp() * 1000)
+        cursor_ms = last_ts_ms + delta_ms
+        print(f"  [fetch] {len(df_batch)} candles through {df_batch.index.max().date()} "
+              f"(total so far: {sum(len(d) for d in all_dfs)})")
+
+    if not all_dfs:
+        print(f"[backfill] No candles returned from exchange for {symbol} {timeframe}")
+        return
+
+    df_exchange = pd.concat(all_dfs)
+    df_exchange = df_exchange[~df_exchange.index.duplicated(keep="last")]
+    df_exchange.sort_index(inplace=True)
+    print(f"[backfill] Fetched {len(df_exchange)} total candles from exchange "
+          f"({df_exchange.index.min().date()} to {df_exchange.index.max().date()})")
+
+    # Step 2: Load all existing data (OHLCV only)
+    df_existing = load_all(symbol, timeframe, test)
+    if not df_existing.empty:
+        print(f"[backfill] Loaded {len(df_existing)} existing docs from MongoDB")
+    else:
+        print(f"[backfill] No existing data in MongoDB")
+
+    # Step 3: Merge — existing OHLCV wins on duplicate timestamps
+    if not df_existing.empty:
+        df_merged = pd.concat([df_exchange, df_existing])
+        df_merged = df_merged[~df_merged.index.duplicated(keep="last")]
+    else:
+        df_merged = df_exchange
+    df_merged.sort_index(inplace=True)
+    print(f"[backfill] Merged dataset: {len(df_merged)} rows")
+
+    # Step 4: Recompute all indicators
+    print(f"[backfill] Computing indicators...")
+    df_merged = compute_all(df_merged, timeframe)
+
+    # Step 5: Drop NaN warmup rows
+    numeric_cols = get_numeric_cols()
+    present_cols = [c for c in numeric_cols if c in df_merged.columns]
+    df_clean = df_merged.dropna(subset=present_cols)
+    print(f"[backfill] {len(df_clean)} rows after NaN drop "
+          f"({len(df_merged) - len(df_clean)} warmup rows removed)")
+
+    # Step 6: Set FnG to None (historical FnG not available)
+    docs = _df_to_docs(df_clean)
+    for doc in docs:
+        doc["FnG_Value"] = None
+        doc["FnG_Class"] = None
+
+    if dry_run:
+        print(f"[backfill] DRY RUN — would upsert {len(docs)} documents. Skipping write.")
+        return
+
+    # Step 7: Upsert in chunks
+    print(f"[backfill] Upserting {len(docs)} documents...")
+    n = bulk_upsert_chunked(symbol, timeframe, docs, test)
+    print(f"[backfill] Done — upserted {n} documents for {symbol} {timeframe}")
+
+
+def run_backfill_all(
+    timeframe: str = None,
+    test: bool = False,
+    dry_run: bool = False,
+    skip_btc: bool = False,
+    since: str = None,
+):
+    """Run backfill for all tokens. Process order: 1d -> 4h -> 1h."""
+    # Order timeframes: daily first (smallest), then 4h, then 1h
+    tf_order = ["1d", "4h", "1h"]
+    timeframes = [timeframe] if timeframe else tf_order
+    timeframes = [tf for tf in tf_order if tf in timeframes]
+
+    tokens = [t for t in TOKENS if not (skip_btc and t == "BTC-USDT")]
+
+    total = len(tokens) * len(timeframes)
+    done = 0
+    failed = []
+
+    for tf in timeframes:
+        for sym in tokens:
+            done += 1
+            print(f"\n{'='*60}")
+            print(f"[backfill] [{done}/{total}] {sym} {tf}")
+            print(f"{'='*60}")
+            try:
+                run_backfill(sym, tf, test=test, dry_run=dry_run, since=since)
+            except Exception as e:
+                print(f"[backfill] ERROR: {sym} {tf} failed: {e}")
+                failed.append(f"{sym} {tf}")
+
+    print(f"\n[backfill] Complete: {done - len(failed)}/{total} succeeded")
+    if failed:
+        print(f"[backfill] Failed: {', '.join(failed)}")
 
 
 def _df_to_docs(df: pd.DataFrame) -> list[dict]:

@@ -89,6 +89,59 @@ def bulk_upsert(
     return result.upserted_count + result.modified_count
 
 
+def load_all(
+    symbol: str,
+    timeframe: str,
+    test: bool = False,
+) -> pd.DataFrame:
+    """Load ALL documents from a collection (OHLCV columns only).
+
+    Unlike load_latest() which returns the last N rows, this loads everything
+    for full-history backfill scenarios where indicators need recomputation.
+    """
+    coll = get_collection(symbol, timeframe, test)
+    cursor = coll.find(
+        {},
+        {"_id": 0, "timestamp": 1, "Open": 1, "High": 1,
+         "Low": 1, "Close": 1, "Volume": 1},
+    ).sort("timestamp", 1)
+    docs = list(cursor)
+    if not docs:
+        return pd.DataFrame(
+            columns=["timestamp", "Open", "High", "Low", "Close", "Volume"]
+        ).set_index("timestamp")
+    df = pd.DataFrame(docs)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df.set_index("timestamp", inplace=True)
+    return df
+
+
+def bulk_upsert_chunked(
+    symbol: str,
+    timeframe: str,
+    docs: list[dict],
+    test: bool = False,
+    chunk_size: int = 5000,
+) -> int:
+    """Bulk upsert in chunks to handle large collections without memory spikes."""
+    if not docs:
+        return 0
+    coll = get_collection(symbol, timeframe, test)
+    total = 0
+    for i in range(0, len(docs), chunk_size):
+        chunk = docs[i : i + chunk_size]
+        ops = [
+            UpdateOne({"timestamp": d["timestamp"]}, {"$set": d}, upsert=True)
+            for d in chunk
+        ]
+        result = coll.bulk_write(ops, ordered=False)
+        n = result.upserted_count + result.modified_count
+        total += n
+        print(f"  [chunk] Upserted {n} docs (batch {i // chunk_size + 1}, "
+              f"rows {i + 1}-{i + len(chunk)})")
+    return total
+
+
 def ensure_indexes(symbol: str, timeframe: str, test: bool = False):
     """Create a unique ascending index on timestamp if it doesn't exist."""
     coll = get_collection(symbol, timeframe, test)

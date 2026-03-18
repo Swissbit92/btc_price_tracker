@@ -8,6 +8,7 @@ The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted applicatio
 
 - **Multi-Token Support**: Tracks 13 tokens across 1h, 4h, and daily timeframes (39 collections).
 - **Historical Seeding**: Backfills up to 500 candles per token/timeframe in one go.
+- **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for daily, Jan 2020 for 4h) for strategy backtesting.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
 - **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.
@@ -132,6 +133,7 @@ Create a `.env` file in the project root:
 
 - **🐍 Processing Pipeline**
   - `seed.py` — initial backfill (500 candles per token/timeframe)
+  - `backfill.py` — deep historical backfill (max available KuCoin history)
   - `update.py` — incremental updates with gap detection
   - `btc_tracker_mongodb/indicators.py` — 85 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
   - `mcp_server.py` — read-only MCP server for Claude Code integration (6 tools)
@@ -185,6 +187,17 @@ Create a `.env` file in the project root:
 
 - **⏳ Backfill Gaps**
   - If the script detects missed candles (e.g. downtime), it automatically fetches and inserts all missing candles for every token.
+
+- **📜 Deep Historical Backfill**
+  - Fetch max available history from KuCoin for backtesting:
+    ```bash
+    python backfill.py --all --timeframe 1d --skip-btc        # all altcoins, daily
+    python backfill.py --all --timeframe 4h                    # all tokens, 4h
+    python backfill.py --symbol BTC-USDT --timeframe 4h --since 2017-10-01  # custom start
+    python backfill.py --all --test --dry-run                  # preview without writing
+    ```
+  - Default start dates: Oct 2017 (daily), Jan 2020 (4h/1h). Override with `--since`.
+  - Safe to re-run — upsert semantics handle duplicates. Per-token error isolation.
 
 - **📊 Querying the Database**
   - Inspect the latest candles:

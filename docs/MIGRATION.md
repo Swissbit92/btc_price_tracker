@@ -349,6 +349,58 @@ python update.py --all --test
 
 ---
 
+## Phase F: Deep Historical Backfill
+
+> **Goal:** Fetch max available history from KuCoin for all tokens to enable strategy backtesting. One-time operation.
+
+### Implementation
+- [x] `db.py`: Added `load_all()` (full collection OHLCV load) and `bulk_upsert_chunked()` (5K-doc batch upserts)
+- [x] `pipeline.py`: Added `run_backfill()` and `run_backfill_all()` with paginated fetch loop, merge logic, `--since` override
+- [x] `backfill.py`: CLI entry point with `--symbol`, `--all`, `--timeframe`, `--all-timeframes`, `--test`, `--dry-run`, `--skip-btc`, `--since`
+
+### Execution Results (2026-03-18)
+
+**Daily (1d) — all 12 altcoins backfilled to production:**
+
+| Token | Docs | Earliest Date | KuCoin Listing |
+|-------|------|---------------|----------------|
+| ETH | 2,858 | 2017-10-19 | Oct 2017 |
+| XRP | 2,414 | 2018-12-04 | Dec 2018 |
+| BNB | 2,266 | 2019-06-19 | Jun 2019 |
+| ADA | 2,251 | 2019-07-04 | Jul 2019 |
+| LINK | 1,838 | 2020-08-20 | Aug 2020 |
+| DOT | 1,837 | 2020-08-21 | Aug 2020 |
+| NEAR | 1,515 | 2021-07-09 | Jul 2021 |
+| SOL | 1,489 | 2021-08-04 | Aug 2021 |
+| DOGE | 1,665 | 2021-02-09 | Feb 2021 |
+| AVAX | 1,641 | 2021-03-05 | Mar 2021 |
+| TON | 1,040 | 2022-10-27 | Oct 2022 |
+| SUI | 852 | 2023-05-03 | May 2023 |
+
+**4h — all 13 tokens backfilled to production (from Jan 2020 or listing date):**
+
+| Token | Docs | Earliest Date |
+|-------|------|---------------|
+| BTC | 18,212 | 2017-10-18 (extended via --since 2017-10-01) |
+| ETH | 13,414 | 2020-01-01 |
+| XRP | 13,414 | 2020-01-01 |
+| BNB | 13,414 | 2020-01-01 |
+| ADA | 13,414 | 2020-01-01 |
+| LINK | 12,020 | 2020-08-20 |
+| DOT | 12,012 | 2020-08-21 |
+| DOGE | 10,984 | 2021-02-09 |
+| AVAX | 10,838 | 2021-03-05 |
+| NEAR | 10,082 | 2021-07-09 |
+| SOL | 9,926 | 2021-08-04 |
+| TON | 6,934 | 2022-12-16 |
+| SUI | 5,854 | 2023-06-14 |
+
+**1h — not backfilled** (skipped to save Atlas quota; available via `backfill.py --all --timeframe 1h` if needed).
+
+**Phase F: COMPLETE** (2026-03-18)
+
+---
+
 ## Current Status
 
 **Phase A: COMPLETE** — All new modules created, requirements updated. All 7 test gates passed (2026-03-01).
@@ -356,6 +408,7 @@ python update.py --all --test
 **Phase C: IN PROGRESS** — C1-C4 done. 4/6 test gates passed. Remaining: C-TG5 (24h validation), C-TG6 (gap check). Then C5-C7 (downstream + cleanup).
 **Phase D: IN PROGRESS** — Code changes complete. Pending: test gates, seeding, validation.
 **Phase E: COMPLETE** — 8 new tokens added (5 → 13). All 39 collections seeded and verified (2026-03-03).
+**Phase F: COMPLETE** — Deep historical backfill for all tokens, daily + 4h (2026-03-18).
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).

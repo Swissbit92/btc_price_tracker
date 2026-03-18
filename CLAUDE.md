@@ -30,6 +30,13 @@ python seed.py --symbol BNB-USDT --all-timeframes
 # Seed from CSV (daily history)
 python seed.py --symbol BTC-USDT --timeframe 1d --csv daily_history.csv
 
+# Deep historical backfill (fetches max available history from KuCoin)
+python backfill.py --symbol ETH-USDT --timeframe 1d          # single token
+python backfill.py --all --timeframe 1d --skip-btc            # all altcoins, daily
+python backfill.py --all --timeframe 4h                       # all tokens, 4h
+python backfill.py --symbol BTC-USDT --timeframe 4h --since 2017-10-01  # custom start date
+python backfill.py --all --test --dry-run                     # dry-run to test DB
+
 # Run incremental update (single token)
 python update.py --symbol BTC-USDT --timeframe 1h
 
@@ -73,6 +80,19 @@ All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):
 6. **Fetch Fear & Greed Index** from alternative.me API (`sentiment.py`)
 7. **Bulk upsert** only newly fetched rows into MongoDB, skipping any with NaN indicators
 
+### Deep Historical Backfill (`backfill.py`)
+
+One-time operation to fetch max available history from KuCoin for backtesting:
+1. **Determine start date** — Oct 2017 for daily (max KuCoin history), Jan 2020 for 4h/1h (or custom via `--since`)
+2. **Fetch all candles** from KuCoin in paginated batches (handles partial batches and exchange data gaps)
+3. **Load all existing data** from MongoDB (OHLCV only via `load_all()`)
+4. **Merge** — deduplicate on timestamp, existing OHLCV wins on conflicts
+5. **Recompute all indicators** on the full merged dataset
+6. **Drop NaN warmup rows**, set FnG to None (historical FnG unavailable)
+7. **Chunked upsert** via `bulk_upsert_chunked()` (5K-doc batches)
+
+Safe to re-run (upsert semantics), per-token error isolation, resumable.
+
 ### MongoDB Schema
 
 - Database: `btc_data` (production), `btc_data_test` (testing)
@@ -87,11 +107,11 @@ All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):
 | File | Purpose |
 |---|---|
 | `config.py` | Central config: TOKENS (13), TIMEFRAMES (3), DB names, collection name mapping |
-| `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, bulk_upsert, ensure_indexes, upsert_indicator_glossary |
+| `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, load_all, bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary |
 | `extract.py` | CCXT-based KuCoin data fetching: fetch_candles, fetch_seed_candles |
 | `indicators.py` | Single source of truth for ~85 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY, get_glossary_document() |
 | `sentiment.py` | Fear & Greed Index fetcher: fetch_fear_greed() with graceful fallback |
-| `pipeline.py` | Orchestration: run_seed, run_update, run_seed_from_csv, run_seed_all, run_update_all |
+| `pipeline.py` | Orchestration: run_seed, run_update, run_seed_from_csv, run_seed_all, run_update_all, run_backfill, run_backfill_all |
 | `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare and --glossary modes |
 
 ### Technical Indicators (~85 numeric + 1 string column)
@@ -131,6 +151,7 @@ Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env v
 
 ## Important Constraints
 
+- `backfill.py` fetches deep history; default start dates are Oct 2017 (daily) and Jan 2020 (4h/1h). Override with `--since YYYY-MM-DD`.
 - Update scripts require **at least 200 rows** already in MongoDB to compute long-window indicators (SMA_200, EMA_200). Always run `seed.py` first.
 - `pandas-ta-classic` is the TA library (not `pandas-ta` or `ta`). Import as `import pandas_ta_classic as ta`.
 - Fibonacci column names use underscores not dots: `Fib_236`, `Fib_382`, `Fib_500`, `Fib_618`, `Fib_100` (MongoDB rejects dots in field names).
