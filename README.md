@@ -434,7 +434,7 @@ With this CI/CD pipeline in place, every push or scheduled run will automaticall
   - Indicates some long‐window indicators (e.g. SMA_200, EMA_200) still have insufficient data.  
   - **Solution**:  
     1. Verify your DataFrame contains at least 200+ rows.  
-    2. Re‐run `seed_historical.py` or let the hourly backfill accumulate more hours.
+    2. Re‐run `seed.py` or let the hourly backfill accumulate more hours.
 
 - **🔒 “MONGODB_URI not set” or authentication errors**
   - Happens when `MONGODB_URI` is unset or invalid.

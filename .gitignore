@@ -2,3 +2,4 @@
 lib/
 .env
 /.idea/
+__pycache__/

@@ -193,10 +193,10 @@ python update.py --all --test
 ### C7. Cleanup (only after downstream repos fully migrated)
 - [ ] Drop test collections in `btc_data_test`
 - [ ] Drop old collections (`1h_price_data`, `daily_price_data`) — ONLY after ALL downstream repos migrated
-- [ ] Delete old scripts: `seed_historical.py`, `seed_daily.py`, `update_hourly.py`, `update_daily.py`, `mongodb_query.py`, `query_latest_daily.py`
-- [ ] Delete `de421.bsp` (16MB ephemeris file)
-- [ ] Update `app.py` to use new imports
-- [ ] Update `CLAUDE.md` with new architecture docs
+- [x] Delete old scripts: `seed_historical.py`, `seed_daily.py`, `update_hourly.py`, `update_daily.py`, `mongodb_query.py`, `query_latest_daily.py` (DONE 2026-03-18)
+- [x] Delete `de421.bsp` (16MB ephemeris file) (DONE 2026-03-18)
+- [x] Update `app.py` to use new imports (DONE 2026-03-18)
+- [x] Update `CLAUDE.md` with new architecture docs (DONE 2026-03-18)
 
 ---
 
@@ -216,15 +216,15 @@ python update.py --all --test
 | CREATE | `docs/MIGRATION.md` | A | Done |
 | MODIFY | `.github/workflows/update-hourly.yml` | C4 | Done |
 | MODIFY | `.github/workflows/update-daily.yml` | C4 | Done |
-| MODIFY | `app.py` | C7 | Pending |
-| MODIFY | `CLAUDE.md` | C7 | Pending |
-| DELETE | `btc_tracker_mongodb/seed_historical.py` | C7 | Pending |
-| DELETE | `btc_tracker_mongodb/seed_daily.py` | C7 | Pending |
-| DELETE | `btc_tracker_mongodb/update_hourly.py` | C7 | Pending |
-| DELETE | `btc_tracker_mongodb/update_daily.py` | C7 | Pending |
-| DELETE | `btc_tracker_mongodb/mongodb_query.py` | C7 | Pending |
-| DELETE | `btc_tracker_mongodb/query_latest_daily.py` | C7 | Pending |
-| DELETE | `de421.bsp` | C7 | Pending |
+| MODIFY | `app.py` | C7 | Done |
+| MODIFY | `CLAUDE.md` | C7 | Done |
+| DELETE | `btc_tracker_mongodb/seed_historical.py` | C7 | Done |
+| DELETE | `btc_tracker_mongodb/seed_daily.py` | C7 | Done |
+| DELETE | `btc_tracker_mongodb/update_hourly.py` | C7 | Done |
+| DELETE | `btc_tracker_mongodb/update_daily.py` | C7 | Done |
+| DELETE | `btc_tracker_mongodb/mongodb_query.py` | C7 | Done |
+| DELETE | `btc_tracker_mongodb/query_latest_daily.py` | C7 | Done |
+| DELETE | `de421.bsp` | C7 | Done |
 
 ---
 
@@ -244,50 +244,50 @@ python update.py --all --test
 > **Goal:** Expand from 52 to ~79 indicators, add BNB as 5th token, add 4h timeframe, integrate Fear & Greed Index.
 
 ### D1. Indicator cleanup
-- [ ] Removed `Stoch_RSI` (duplicate of `Stoch_RSI_K`)
-- [ ] Removed `ROC_12`, `ROC_24` (near-duplicate of `LogReturn_12`/`LogReturn_24`)
-- [ ] Fixed `HDPR_MA` to reuse `SMA_50` instead of recomputing
-- [ ] Fixed VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily
+- [x] Removed `Stoch_RSI` (duplicate of `Stoch_RSI_K`)
+- [x] Removed `ROC_12`, `ROC_24` (near-duplicate of `LogReturn_12`/`LogReturn_24`)
+- [x] Fixed `HDPR_MA` to reuse `SMA_50` instead of recomputing
+- [x] Fixed VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily
 
 ### D2. New indicators added (Tier 1)
-- [ ] OBV (On-Balance Volume)
-- [ ] CMF (Chaikin Money Flow, 20)
-- [ ] MFI (Money Flow Index, 14)
-- [ ] Supertrend (7, 3.0) — direction + value
-- [ ] NATR (Normalized ATR, 14)
-- [ ] KAMA (Kaufman Adaptive MA, 10)
-- [ ] Choppiness Index (14)
+- [x] OBV (On-Balance Volume)
+- [x] CMF (Chaikin Money Flow, 20)
+- [x] MFI (Money Flow Index, 14)
+- [x] Supertrend (7, 3.0) — direction + value
+- [x] NATR (Normalized ATR, 14)
+- [x] KAMA (Kaufman Adaptive MA, 10)
+- [x] Choppiness Index (14)
 
 ### D3. New indicators added (Tier 2)
-- [ ] Squeeze Momentum (flag + momentum)
-- [ ] Aroon (Up/Down/Oscillator, 25)
-- [ ] HMA (Hull MA, 20)
-- [ ] PSAR (Parabolic SAR)
-- [ ] Stochastic (K=14, D=3)
-- [ ] TRIX (18)
+- [x] Squeeze Momentum (flag + momentum)
+- [x] Aroon (Up/Down/Oscillator, 25)
+- [x] HMA (Hull MA, 20)
+- [x] PSAR (Parabolic SAR)
+- [x] Stochastic (K=14, D=3)
+- [x] TRIX (18)
 
 ### D4. ML feature engineering
-- [ ] Close/RSI/Volume Z-scores (100-period)
-- [ ] Candle body/wick ratios (ATR-normalized)
-- [ ] Price vs EMA20/SMA200 (ATR-normalized)
-- [ ] BB Width
-- [ ] RSI Slope (3), MACD Slope (3)
+- [x] Close/RSI/Volume Z-scores (100-period)
+- [x] Candle body/wick ratios (ATR-normalized)
+- [x] Price vs EMA20/SMA200 (ATR-normalized)
+- [x] BB Width
+- [x] RSI Slope (3), MACD Slope (3)
 
 ### D5. Fear & Greed Index
-- [ ] Created `sentiment.py` — fetches from `https://api.alternative.me/fng/`
-- [ ] Integrated into `pipeline.py` — FnG_Value (int 0-100) and FnG_Class (string) added to each document
-- [ ] Graceful fallback: pipeline continues if API is unreachable
+- [x] Created `sentiment.py` — fetches from `https://api.alternative.me/fng/`
+- [x] Integrated into `pipeline.py` — FnG_Value (int 0-100) and FnG_Class (string) added to each document
+- [x] Graceful fallback: pipeline continues if API is unreachable
 
 ### D6. Token expansion
-- [ ] Added BNB-USDT to TOKENS in `config.py`
-- [ ] 5 tokens total: BTC, ETH, SOL, XRP, BNB
+- [x] Added BNB-USDT to TOKENS in `config.py`
+- [x] 5 tokens total: BTC, ETH, SOL, XRP, BNB
 
 ### D7. Timeframe expansion
-- [ ] Added 4h to TIMEFRAMES in `config.py`
-- [ ] Updated `get_collection_name()` for 4h -> `{token}_4h_price_data`
-- [ ] Updated `extract.py` with 4h CCXT/delta mappings
-- [ ] Updated `pipeline.py` with 4h timedelta and floor logic
-- [ ] Created `.github/workflows/update-4h.yml` (cron `0 */4 * * *`)
+- [x] Added 4h to TIMEFRAMES in `config.py`
+- [x] Updated `get_collection_name()` for 4h -> `{token}_4h_price_data`
+- [x] Updated `extract.py` with 4h CCXT/delta mappings
+- [x] Updated `pipeline.py` with 4h timedelta and floor logic
+- [x] Created `.github/workflows/update-4h.yml` (cron `0 */4 * * *`)
 
 ### D8. Column count
 | Category | Count |
@@ -301,14 +301,14 @@ python update.py --all --test
 | **Total** | **~85 numeric + 1 string** |
 
 ### Phase D — Test Gate
-- [ ] **D-TG1: Import test** — All modules import without errors
-- [ ] **D-TG2: Indicator smoke test** — `compute_all()` on 300-row synthetic OHLCV produces ~85 expected columns
-- [ ] **D-TG3: No NaN in tail** — Zero NaN in last 50 rows of all indicator columns
-- [ ] **D-TG4: Fear & Greed fetch** — `fetch_fear_greed()` returns valid data
-- [ ] **D-TG5: BNB CCXT fetch** — BNB-USDT candles fetch successfully for 1h, 4h, 1d
-- [ ] **D-TG6: Test DB seed** — All 15 collections (5 tokens x 3 timeframes) seeded in test DB
-- [ ] **D-TG7: OHLCV parity** — Existing 4 tokens' OHLCV data unchanged by new indicators
-- [ ] **D-TG8: Update clean** — `update.py --all --test` runs with no errors
+- [x] **D-TG1: Import test** — All modules import without errors (PASSED)
+- [x] **D-TG2: Indicator smoke test** — `compute_all()` on 300-row synthetic OHLCV produces ~85 expected columns (PASSED)
+- [x] **D-TG3: No NaN in tail** — Zero NaN in last 50 rows of all indicator columns (PASSED)
+- [x] **D-TG4: Fear & Greed fetch** — `fetch_fear_greed()` returns valid data (PASSED)
+- [x] **D-TG5: BNB CCXT fetch** — BNB-USDT candles fetch successfully for 1h, 4h, 1d (PASSED)
+- [x] **D-TG6: Test DB seed** — All 15 collections (5 tokens x 3 timeframes) seeded in test DB (PASSED — expanded to 39 collections in Phase E)
+- [x] **D-TG7: OHLCV parity** — Existing 4 tokens' OHLCV data unchanged by new indicators (PASSED)
+- [x] **D-TG8: Update clean** — `update.py --all --test` runs with no errors (PASSED)
 
 ---
 
@@ -405,8 +405,8 @@ python update.py --all --test
 
 **Phase A: COMPLETE** — All new modules created, requirements updated. All 7 test gates passed (2026-03-01).
 **Phase B: COMPLETE** — All 4 tokens seeded. 8/8 test gates passed (2026-03-01).
-**Phase C: IN PROGRESS** — C1-C4 done. 4/6 test gates passed. Remaining: C-TG5 (24h validation), C-TG6 (gap check). Then C5-C7 (downstream + cleanup).
-**Phase D: IN PROGRESS** — Code changes complete. Pending: test gates, seeding, validation.
+**Phase C: COMPLETE** — Production cutover done, legacy scripts deleted, app.py updated (2026-03-18). Remaining DB cleanup (drop old collections) deferred until downstream repos fully migrated.
+**Phase D: COMPLETE** — All indicators implemented, test gates passed, 39 collections live (2026-03-18).
 **Phase E: COMPLETE** — 8 new tokens added (5 → 13). All 39 collections seeded and verified (2026-03-03).
 **Phase F: COMPLETE** — Deep historical backfill for all tokens, daily + 4h (2026-03-18).
 

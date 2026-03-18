@@ -133,7 +133,7 @@ When modifying indicators, only edit `indicators.py` — it is the single source
 
 ### Flask App (`app.py`)
 
-Minimal HTTP wrapper: `GET /` triggers `update_hourly.main()`. Used by GCP Cloud Run + Cloud Scheduler. Will be updated to use new pipeline in cleanup phase.
+Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by GCP Cloud Run + Cloud Scheduler.
 
 ### Automation
 
