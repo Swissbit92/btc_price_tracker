@@ -10,7 +10,7 @@ Usage:
 """
 
 import argparse
-from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES
+from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES, MARKET_TYPES
 from btc_tracker_mongodb.pipeline import run_seed, run_seed_from_csv, run_seed_all
 
 
@@ -28,7 +28,23 @@ def main():
     parser.add_argument("--csv", help="Path to CSV file for CSV-based seed")
     parser.add_argument("--count", type=int, default=500,
                         help="Number of candles to fetch (default: 500)")
+    parser.add_argument("--market-type", choices=MARKET_TYPES, default="spot",
+                        help="Market type: spot (default) or perp (perpetual futures)")
     args = parser.parse_args()
+
+    if args.market_type == "perp":
+        from btc_tracker_mongodb.pipeline import run_perp_seed, run_perp_seed_all
+        if args.all:
+            run_perp_seed_all(timeframe=args.timeframe, test=args.test, count=args.count)
+        elif not args.symbol:
+            parser.error("--symbol is required unless --all is used")
+        elif args.all_timeframes:
+            for tf in TIMEFRAMES:
+                run_perp_seed(args.symbol, tf, test=args.test, count=args.count)
+        else:
+            tf = args.timeframe or "1h"
+            run_perp_seed(args.symbol, tf, test=args.test, count=args.count)
+        return
 
     if args.all:
         run_seed_all(timeframe=args.timeframe, test=args.test, count=args.count)

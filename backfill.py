@@ -19,7 +19,7 @@ Usage:
 """
 
 import argparse
-from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES
+from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES, MARKET_TYPES
 from btc_tracker_mongodb.pipeline import run_backfill, run_backfill_all
 
 
@@ -42,7 +42,29 @@ def main():
                         help="Skip BTC when using --all (BTC already has deep history)")
     parser.add_argument("--since",
                         help="Override start date as YYYY-MM-DD (e.g. 2017-10-01)")
+    parser.add_argument("--market-type", choices=MARKET_TYPES, default="spot",
+                        help="Market type: spot (default) or perp (perpetual futures)")
     args = parser.parse_args()
+
+    if args.market_type == "perp":
+        from btc_tracker_mongodb.pipeline import run_perp_backfill, run_perp_backfill_all
+        if args.all:
+            run_perp_backfill_all(
+                timeframe=args.timeframe,
+                test=args.test,
+                dry_run=args.dry_run,
+                skip_btc=args.skip_btc,
+                since=args.since,
+            )
+        elif not args.symbol:
+            parser.error("--symbol is required unless --all is used")
+        elif args.all_timeframes:
+            for tf in ["1d", "4h", "1h"]:
+                run_perp_backfill(args.symbol, tf, test=args.test, dry_run=args.dry_run, since=args.since)
+        else:
+            tf = args.timeframe or "1d"
+            run_perp_backfill(args.symbol, tf, test=args.test, dry_run=args.dry_run, since=args.since)
+        return
 
     if args.all:
         run_backfill_all(

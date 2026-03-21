@@ -9,7 +9,7 @@ Usage:
 """
 
 import argparse
-from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES
+from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES, MARKET_TYPES
 from btc_tracker_mongodb.pipeline import run_update, run_update_all
 
 
@@ -24,7 +24,23 @@ def main():
                         help="Update all timeframes for the given symbol")
     parser.add_argument("--test", action="store_true",
                         help="Read/write test database instead of production")
+    parser.add_argument("--market-type", choices=MARKET_TYPES, default="spot",
+                        help="Market type: spot (default) or perp (perpetual futures)")
     args = parser.parse_args()
+
+    if args.market_type == "perp":
+        from btc_tracker_mongodb.pipeline import run_perp_update, run_perp_update_all
+        if args.all:
+            run_perp_update_all(timeframe=args.timeframe, test=args.test)
+        elif not args.symbol:
+            parser.error("--symbol is required unless --all is used")
+        elif args.all_timeframes:
+            for tf in TIMEFRAMES:
+                run_perp_update(args.symbol, tf, test=args.test)
+        else:
+            tf = args.timeframe or "1h"
+            run_perp_update(args.symbol, tf, test=args.test)
+        return
 
     if args.all:
         run_update_all(timeframe=args.timeframe, test=args.test)

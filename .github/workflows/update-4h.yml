@@ -22,7 +22,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run 4h update for all tokens
+      - name: Run 4h update for all tokens (spot)
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: python update.py --all --timeframe 4h
+
+      - name: Run 4h update for all tokens (perp)
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: python update.py --all --timeframe 4h --market-type perp

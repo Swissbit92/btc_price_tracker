@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Supports both **spot** and **perpetual futures** market types. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
 
 ## Commands
 
@@ -49,6 +49,13 @@ python update.py --all
 # Use test database instead of production
 python seed.py --all --test
 python update.py --all --test
+
+# Perpetual futures (add --market-type perp to any command)
+python seed.py --symbol BTC-USDT --timeframe 1d --market-type perp
+python seed.py --all --timeframe 1d --market-type perp --test
+python update.py --all --timeframe 1h --market-type perp
+python backfill.py --symbol BTC-USDT --timeframe 1d --market-type perp --test --dry-run
+python backfill.py --all --timeframe 1d --market-type perp --test
 
 # Query latest entries
 python -m btc_tracker_mongodb.query --symbol BTC-USDT --timeframe 1h --limit 20
@@ -99,19 +106,26 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 - Collection naming: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data`
   - e.g. `btc_1h_price_data`, `eth_4h_price_data`, `sol_daily_price_data`, `doge_1h_price_data`
 - Each document is keyed by `timestamp` (UTC datetime); unique index enforced
-- 13 tokens x 3 timeframes = 39 collections total
+- 13 tokens x 3 timeframes = 39 spot collections total
+- **Perpetual futures collections:** `{token}_perp_1h_price_data`, `{token}_perp_4h_price_data`, `{token}_perp_daily_price_data`
+  - e.g. `btc_perp_1h_price_data`, `eth_perp_4h_price_data`, `sol_perp_daily_price_data`
+  - 13 tokens x 3 timeframes = 39 perp collections
+- **Funding rate collections:** `{token}_funding_rate_data` (per-token, 8h granularity)
+  - e.g. `btc_funding_rate_data`, `eth_funding_rate_data` — 13 collections
+- `funding_rate_metadata` collection: per-token metadata (exchange, contract symbol, settlement schedule)
 - `indicator_metadata` collection: stores a single `indicator_glossary` document with column descriptions, categories, ranges, and a `schema_hash` for change detection. Auto-synced on every pipeline run.
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
 | File | Purpose |
 |---|---|
-| `config.py` | Central config: TOKENS (13), TIMEFRAMES (3), DB names, collection name mapping |
-| `db.py` | MongoDB connection + CRUD: get_db, get_collection, load_latest, load_all, bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary |
-| `extract.py` | CCXT-based KuCoin data fetching: fetch_candles, fetch_seed_candles |
-| `indicators.py` | Single source of truth for ~85 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY, get_glossary_document() |
+| `config.py` | Central config: TOKENS (13), TIMEFRAMES (3), MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping (`market_type` param) |
+| `db.py` | MongoDB connection + CRUD: all functions accept `market_type="spot"` param. Funding CRUD: load_funding_rates, bulk_upsert_funding, ensure_funding_indexes, upsert_funding_metadata |
+| `extract.py` | CCXT-based KuCoin **spot** data fetching: fetch_candles, fetch_seed_candles |
+| `extract_perp.py` | CCXT-based KuCoin **Futures** data fetching via `ccxt.kucoinfutures`: fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history |
+| `indicators.py` | Single source of truth for ~85 indicators + ML features + 3 derivatives columns: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY |
 | `sentiment.py` | Fear & Greed Index fetcher: fetch_fear_greed() with graceful fallback |
-| `pipeline.py` | Orchestration: run_seed, run_update, run_seed_from_csv, run_seed_all, run_update_all, run_backfill, run_backfill_all |
+| `pipeline.py` | Orchestration: spot (run_seed, run_update, run_backfill + _all) and perp (run_perp_seed, run_perp_update, run_perp_backfill + _all). Funding alignment via _align_funding_to_candles() |
 | `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare and --glossary modes |
 
 ### Technical Indicators (~85 numeric + 1 string column)
@@ -128,6 +142,7 @@ Computed by `indicators.py` using `pandas-ta-classic`:
 **ML Features:** Z-scores (Close/RSI/Volume, 100-period), Candle body/wick ratios (ATR-normalized), Price vs EMA20/SMA200 (ATR-normalized), RSI slope (3), MACD slope (3)
 **Derived:** Log returns (1, 4, 12, 24 periods), temporal features (hour/dow sin/cos)
 **Sentiment:** Fear & Greed Index (FnG_Value: 0-100 int, FnG_Class: string)
+**Derivatives (perp collections only):** Funding_Rate (aggregated per candle period), Mark_Price (at closest settlement), Basis_Pct ((mark-index)/index*100). These are pipeline-injected, not computed by `compute_all()`. Excluded from NaN validation.
 
 When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `INDICATOR_GLOSSARY` if adding/removing columns (`get_numeric_cols()` derives from it automatically). Also update the glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md) to keep the human-readable reference in sync.
 
@@ -137,9 +152,10 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 
 ### Automation
 
-- `.github/workflows/update-hourly.yml` — cron `0 * * * *` runs `python update.py --all --timeframe 1h`
-- `.github/workflows/update-4h.yml` — cron `0 */4 * * *` runs `python update.py --all --timeframe 4h`
-- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs `python update.py --all --timeframe 1d`
+- `.github/workflows/update-hourly.yml` — cron `0 * * * *` runs spot + perp updates for 1h
+- `.github/workflows/update-4h.yml` — cron `0 */4 * * *` runs spot + perp updates for 4h
+- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs spot + perp updates for 1d
+- Each workflow runs spot first, then perp (sequential steps, shared MONGODB_URI secret)
 - Secret required in GitHub Actions: `MONGODB_URI`
 
 ## Environment Variables
@@ -166,20 +182,21 @@ Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env v
 
 ## MCP Server (`mcp_server.py`)
 
-Read-only MCP server that exposes MongoDB data to Claude Code via 6 tools. Registered in `.mcp.json` — auto-discovered when Claude Code opens the project.
+Read-only MCP server that exposes MongoDB data to Claude Code via 7 tools. Registered in `.mcp.json` — auto-discovered when Claude Code opens the project.
 
 ### Tools
 
 | Tool | Purpose |
 |------|---------|
-| `list_collections()` | List all 39 token/timeframe/collection combos (no DB call) |
-| `query_price_data(symbol, timeframe, limit, fields)` | Latest N docs, optional field filtering |
-| `get_latest_price(symbol, timeframe)` | Single most recent document |
+| `list_collections()` | List all 91 collections: 39 spot + 39 perp + 13 funding (no DB call) |
+| `query_price_data(symbol, timeframe, limit, fields, market_type)` | Latest N docs, optional field filtering. `market_type="spot"` or `"perp"` |
+| `get_latest_price(symbol, timeframe, market_type)` | Single most recent document |
 | `get_indicator_glossary()` | Fetch indicator glossary from metadata collection |
-| `get_collection_stats(symbol, timeframe)` | Doc count, date range, column list |
-| `query_by_date_range(symbol, start_date, end_date, timeframe, fields, limit)` | Query within a date range (chronological) |
+| `get_collection_stats(symbol, timeframe, market_type)` | Doc count, date range, column list |
+| `query_by_date_range(symbol, start_date, end_date, timeframe, fields, limit, market_type)` | Query within a date range (chronological) |
+| `query_funding_rates(symbol, limit, start_date, end_date)` | Query 8h funding rate history from `{token}_funding_rate_data` |
 
-All tools accept flexible symbol input (`"BTC"`, `"btc"`, or `"BTC-USDT"`) and return JSON. Errors are returned as `{"error": "message"}` so Claude can reason about failures.
+All tools accept flexible symbol input (`"BTC"`, `"btc"`, or `"BTC-USDT"`) and return JSON. Errors are returned as `{"error": "message"}` so Claude can reason about failures. Tools with `market_type` default to `"spot"` for backward compatibility.
 
 ### Dependencies
 

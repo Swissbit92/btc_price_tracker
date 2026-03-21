@@ -26,6 +26,7 @@ import pandas_ta_classic as ta
 CATEGORY_ORDER = [
     "Trend", "Momentum", "Volume", "Volatility", "Risk", "Price Levels",
     "Custom", "Log Returns", "Temporal", "ML Features", "Sentiment",
+    "Derivatives",
 ]
 
 INDICATOR_GLOSSARY: dict[str, dict] = {
@@ -738,6 +739,32 @@ INDICATOR_GLOSSARY: dict[str, dict] = {
         "dtype": "string",
         "description": "Classification: Extreme Fear, Fear, Neutral, Greed, Extreme Greed. null if API unreachable.",
     },
+
+    # ── Derivatives (pipeline-injected for perp collections, not computed by compute_all) ──
+    "Funding_Rate": {
+        "name": "Funding Rate",
+        "category": "Derivatives",
+        "parameters": "Aggregated per candle period",
+        "range": "Typically -0.03 to 0.03",
+        "dtype": "numeric",
+        "description": "Aggregated funding rate for the candle period. Daily: sum of 3x8h settlements. 4h/1h: forward-filled from closest settlement. null for spot collections.",
+    },
+    "Mark_Price": {
+        "name": "Mark Price",
+        "category": "Derivatives",
+        "parameters": "At closest funding settlement",
+        "range": "Price scale",
+        "dtype": "numeric",
+        "description": "Perpetual futures mark price at the closest funding settlement. Used for funding payment calculation and liquidation modeling. null for spot collections.",
+    },
+    "Basis_Pct": {
+        "name": "Futures Basis",
+        "category": "Derivatives",
+        "parameters": "(mark - index) / index * 100",
+        "range": "Typically -2 to 2",
+        "dtype": "numeric",
+        "description": "Futures basis as percentage. Positive = futures premium (bullish sentiment), negative = discount (bearish). null for spot collections.",
+    },
 }
 
 
@@ -848,7 +875,7 @@ def get_numeric_cols() -> list[str]:
     nullable (filled per-pipeline-run, not per-row) and should not cause
     a row to be dropped during NaN validation.
     """
-    _EXCLUDE = {"FnG_Value"}
+    _EXCLUDE = {"FnG_Value", "Funding_Rate", "Mark_Price", "Basis_Pct"}
     return [
         col for col, meta in INDICATOR_GLOSSARY.items()
         if meta["dtype"] == "numeric" and col not in _EXCLUDE

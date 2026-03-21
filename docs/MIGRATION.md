@@ -410,6 +410,8 @@ python update.py --all --test
 **Phase E: COMPLETE** — 8 new tokens added (5 → 13). All 39 collections seeded and verified (2026-03-03).
 **Phase F: COMPLETE** — Deep historical backfill for all tokens, daily + 4h (2026-03-18).
 
+**Phase G: IN PROGRESS** — Perpetual futures data pipeline. See [docs/PERPETUAL_FUTURES.md](PERPETUAL_FUTURES.md).
+
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).
 - VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily. Fixes sliding window reset artifact.
