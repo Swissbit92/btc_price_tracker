@@ -45,8 +45,9 @@ Extending `btc_price_tracker` to fetch perpetual futures OHLCV + funding rate da
 | 8: MCP server | COMPLETE | 2026-03-21 | MCP | market_type param on 4 tools, list_collections returns 91 entries, new query_funding_rates tool. QA: passed. |
 | 9: Unit tests | COMPLETE | 2026-03-21 | Tests | 64 tests across 4 files. QA: rejected once (fragile `is None` assertions, missing fallback test), fixed and re-passed. Tests also found+fixed a timezone bug in _align_funding_to_candles. |
 | 10: Metadata seeding | COMPLETE | 2026-03-21 | Metadata | seed_funding_metadata() + _KUCOIN_CONTRACT_MAP (13 tokens, BTC=XBTUSDTM). QA: passed. |
-| Test DB validation | COMPLETE | 2026-03-21 | QA | Gates 1-6 passed. Found KuCoin Futures 200-candle/request limit (fixed). Gate 7 (full backfill) deferred — pipeline proven via dry run. |
-| Production deploy | PENDING | | QA | Ready after full backfill |
+| Test DB validation | COMPLETE | 2026-03-21 | QA | Gates 1-6 passed. Found KuCoin Futures 200-candle/request limit (fixed). |
+| Storage optimization | COMPLETE | 2026-03-22 | QA | Dropped 1h+4h spot collections (27 total). Freed ~200 MB. Daily-only production. |
+| Production deploy | COMPLETE | 2026-03-22 | QA | 13 perp daily collections + 13 funding rate collections + metadata. All 13 tokens backfilled. |
 
 ## Architecture Decisions
 
@@ -65,13 +66,36 @@ Extending `btc_price_tracker` to fetch perpetual futures OHLCV + funding rate da
 
 ## Verification Results
 
-*(Results from each test gate)*
+- Gate 1 (Unit tests): 53/53 passed
+- Gate 2 (CCXT smoke): All 13 tokens confirmed on KuCoin Futures
+- Gate 3 (Single-token seed): BTC perp daily seeded (501 docs after 200-candle batch fix)
+- Gate 4 (Multi-token seed): All 13 tokens seeded
+- Gate 5 (Update cycle): All 13 tokens "up to date"
+- Gate 6 (Backfill dry run): BTC 2,183 candles from 2020-03-30, 5,049 funding records
+- Production backfill: All 13 tokens, 13/13 succeeded
 
-## Collections Created
+## Collections Created (Production)
 
-*(List of new MongoDB collections with doc counts and date ranges)*
+| Collection | Docs | Date Range |
+|-----------|------|-----------|
+| btc_perp_daily_price_data | 1,984 | 2020-03-30 to 2026-03-21 |
+| eth_perp_daily_price_data | 1,920 | 2020-06-02 to 2026-03-21 |
+| sol_perp_daily_price_data | 1,654 | 2021-02-23 to 2026-03-21 |
+| xrp_perp_daily_price_data | 1,780 | 2020-10-20 to 2026-03-21 |
+| bnb_perp_daily_price_data | 1,657 | 2021-02-20 to 2026-03-21 |
+| doge_perp_daily_price_data | 1,679 | 2021-01-29 to 2026-03-21 |
+| avax_perp_daily_price_data | 1,645 | 2021-03-04 to 2026-03-21 |
+| link_perp_daily_price_data | 1,807 | 2020-09-23 to 2026-03-21 |
+| ada_perp_daily_price_data | 1,780 | 2020-10-20 to 2026-03-21 |
+| sui_perp_daily_price_data | 855 | 2023-05-03 to 2026-03-21 |
+| ton_perp_daily_price_data | 981 | 2022-12-28 to 2026-03-21 |
+| dot_perp_daily_price_data | 1,788 | 2020-10-12 to 2026-03-21 |
+| near_perp_daily_price_data | 1,422 | 2021-10-13 to 2026-03-21 |
+| **Total perp OHLCV** | **20,952** | |
+| **Total funding rates** | **31,775** (across 13 `{token}_funding_rate_data` collections) | |
 
 ---
 
 *Started: 2026-03-21*
-*Status: In Progress*
+*Completed: 2026-03-22*
+*Status: COMPLETE — Production live*

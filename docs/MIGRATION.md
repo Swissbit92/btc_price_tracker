@@ -410,7 +410,8 @@ python update.py --all --test
 **Phase E: COMPLETE** — 8 new tokens added (5 → 13). All 39 collections seeded and verified (2026-03-03).
 **Phase F: COMPLETE** — Deep historical backfill for all tokens, daily + 4h (2026-03-18).
 
-**Phase G: IN PROGRESS** — Perpetual futures data pipeline. See [docs/PERPETUAL_FUTURES.md](PERPETUAL_FUTURES.md).
+**Phase G: COMPLETE** (2026-03-22) — Perpetual futures data pipeline. 13 perp daily + 13 funding rate collections live. See [docs/PERPETUAL_FUTURES.md](PERPETUAL_FUTURES.md).
+**Phase H: COMPLETE** (2026-03-22) — Storage optimization. Dropped 1h+4h collections (27 total, ~200 MB freed). Daily-only production. Hourly/4h GitHub Actions workflows deleted.
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).

@@ -150,10 +150,10 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 
 ### Automation
 
-- `.github/workflows/update-hourly.yml` — cron `0 * * * *` runs spot + perp updates for 1h
-- `.github/workflows/update-4h.yml` — cron `0 */4 * * *` runs spot + perp updates for 4h
-- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs spot + perp updates for 1d
-- Each workflow runs spot first, then perp (sequential steps, shared MONGODB_URI secret)
+- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs spot + perp daily updates
+  - Step 1: `python update.py --all --timeframe 1d` (spot)
+  - Step 2: `python update.py --all --timeframe 1d --market-type perp` (perp)
+- **Daily-only production:** 1h and 4h workflows removed (all strategies are daily-only; 4h/1h data dropped to fit 512 MB Atlas free tier). Infrastructure supports all timeframes — re-populate via `backfill.py --all --timeframe 4h` when needed.
 - Secret required in GitHub Actions: `MONGODB_URI`
 
 ## Environment Variables
