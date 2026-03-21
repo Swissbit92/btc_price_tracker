@@ -39,7 +39,7 @@ Extending `btc_price_tracker` to fetch perpetual futures OHLCV + funding rate da
 | 2: extract_perp.py | COMPLETE | 2026-03-21 | Extract | kucoinfutures singleton, OHLCV + funding fetch. QA: rejected once (interval_hours hardcode, load_funding_rates missing sort/conversion), fixed and re-passed. |
 | 3: db.py extensions | COMPLETE | 2026-03-21 | Database | market_type routing on 7 functions, 5 new funding CRUD functions. QA: passed after fixes. |
 | 4: Pipeline functions | COMPLETE | 2026-03-21 | Pipeline | _align_funding_to_candles (period_start-based), _merge_perp_funding, _fetch_and_store_funding, run_perp_seed/update/backfill + _all variants. QA: passed. |
-| 5: Indicators glossary | COMPLETE | 2026-03-21 | Pipeline | Funding_Rate, Mark_Price, Basis_Pct added to INDICATOR_GLOSSARY (Derivatives category). Excluded from NaN validation. compute_all() untouched. QA: passed. |
+| 5: Indicators glossary | REVERTED | 2026-03-21 | Pipeline | Originally added Funding_Rate/Mark_Price/Basis_Pct to glossary. Reverted: pre-aggregation removed — consumer owns aggregation. indicators.py unchanged from pre-Phase-G state. |
 | 6: CLI --market-type | COMPLETE | 2026-03-21 | CLI+CI | --market-type flag on seed.py, update.py, backfill.py. Lazy imports, full arg passthrough. QA: passed. |
 | 7: GitHub Actions | COMPLETE | 2026-03-21 | CLI+CI | Perp step added after spot in all 3 workflows. QA: passed. |
 | 8: MCP server | COMPLETE | 2026-03-21 | MCP | market_type param on 4 tools, list_collections returns 91 entries, new query_funding_rates tool. QA: passed. |
@@ -50,7 +50,7 @@ Extending `btc_price_tracker` to fetch perpetual futures OHLCV + funding rate da
 
 ## Architecture Decisions
 
-*(Recorded as phases complete)*
+- **Pre-aggregation removed (2026-03-21):** Originally, the pipeline aligned 8h funding rates into perp OHLCV documents (Funding_Rate, Mark_Price, Basis_Pct columns). Removed because: (1) the consumer already planned `merge_funding_to_ohlcv()` in its loader API, (2) `_align_funding_to_candles` was the most complex+buggy function (timezone issues, fallback paths), (3) KuCoin doesn't provide markPrice/indexPrice in funding rate responses (always None). Now: raw 8h rates stored in `{token}_funding_rate_data`, perp OHLCV contains only OHLCV + indicators + FnG. Consumer aggregates as needed.
 
 ## Findings Log
 

@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
 from .db import (load_latest, load_all, get_latest_timestamp,
                  bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary,
-                 load_funding_rates, bulk_upsert_funding, ensure_funding_indexes)
+                 bulk_upsert_funding, ensure_funding_indexes)
 from .extract import fetch_candles, fetch_seed_candles
 from .extract_perp import fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history
 from .indicators import compute_all, get_numeric_cols
@@ -368,128 +368,6 @@ def _df_to_docs(df: pd.DataFrame) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Perpetual Futures — helpers
-# ---------------------------------------------------------------------------
-
-def _align_funding_to_candles(
-    funding_df: pd.DataFrame,
-    ohlcv_df: pd.DataFrame,
-    timeframe: str,
-) -> pd.DataFrame:
-    """Align 8h funding rate data to OHLCV candle timestamps.
-
-    Uses period_start-based matching (NOT settlement timestamp), because
-    KuCoin's fundingTimestamp = END of previous round.
-
-    Strategy per timeframe:
-    - Daily: sum all funding rates whose period_start falls within each UTC day
-    - 4H: use the funding rate whose period contains the candle timestamp (forward-fill)
-    - 1H: same as 4H (most 1h bars get NaN/0 — only bars near settlements have a rate)
-
-    Returns a DataFrame aligned to ohlcv_df's index with columns:
-    Funding_Rate, Mark_Price, Basis_Pct
-    """
-    if funding_df.empty:
-        return pd.DataFrame(
-            {"Funding_Rate": pd.NA, "Mark_Price": pd.NA, "Basis_Pct": pd.NA},
-            index=ohlcv_df.index,
-        )
-
-    if timeframe == "1d":
-        # Group funding records by UTC date, sum funding_rate, take last mark/basis
-        work = funding_df.copy()
-        if "period_start" in work.columns and work["period_start"].notna().any():
-            work["_date"] = work["period_start"].dt.date
-        else:
-            # Fallback: use settlement timestamp (the index)
-            work["_date"] = work.index.date
-
-        daily_rate = work.groupby("_date")["funding_rate"].sum()
-        daily_mark = work.groupby("_date")["mark_price"].last()
-        daily_basis = work.groupby("_date")["basis_pct"].last()
-
-        daily_agg = pd.DataFrame({
-            "Funding_Rate": daily_rate,
-            "Mark_Price": daily_mark,
-            "Basis_Pct": daily_basis,
-        })
-        daily_agg.index = pd.to_datetime(daily_agg.index, utc=True)
-
-        # Join to OHLCV by date
-        ohlcv_dates = pd.to_datetime(
-            pd.Series(ohlcv_df.index.date, index=ohlcv_df.index), utc=True
-        )
-        result = pd.DataFrame(index=ohlcv_df.index)
-        result["_date"] = ohlcv_dates
-        result = result.merge(daily_agg, left_on="_date", right_index=True, how="left")
-        result.index = ohlcv_df.index
-        result.drop(columns=["_date"], inplace=True)
-        return result
-
-    else:
-        # 4h / 1h: merge_asof on period_start
-        work = funding_df.copy()
-        if "period_start" in work.columns and work["period_start"].notna().any():
-            merge_key = work["period_start"].copy()
-        else:
-            merge_key = pd.Series(work.index, index=work.index)
-
-        funding_for_merge = pd.DataFrame({
-            "period_start": merge_key.reset_index(drop=True),
-            "Funding_Rate": work["funding_rate"].values,
-            "Mark_Price": work["mark_price"].values,
-            "Basis_Pct": work["basis_pct"].values,
-        })
-        funding_for_merge.sort_values("period_start", inplace=True)
-        funding_for_merge.reset_index(drop=True, inplace=True)
-
-        candle_ts = pd.DataFrame({"candle_ts": ohlcv_df.index})
-        candle_ts.sort_values("candle_ts", inplace=True)
-
-        merged = pd.merge_asof(
-            candle_ts,
-            funding_for_merge,
-            left_on="candle_ts",
-            right_on="period_start",
-            direction="backward",
-        )
-        merged.index = merged["candle_ts"]
-        merged.drop(columns=["candle_ts", "period_start"], inplace=True)
-        # Re-index to match original ohlcv_df order
-        merged = merged.reindex(ohlcv_df.index)
-        return merged
-
-
-def _merge_perp_funding(
-    docs: list[dict],
-    funding_aligned: pd.DataFrame | None,
-) -> list[dict]:
-    """Add Funding_Rate, Mark_Price, Basis_Pct to each doc.
-
-    If funding_aligned is None (fetch failed), sets all to None.
-    Same graceful fallback pattern as _merge_sentiment for FnG.
-    """
-    if funding_aligned is None:
-        for doc in docs:
-            doc["Funding_Rate"] = None
-            doc["Mark_Price"] = None
-            doc["Basis_Pct"] = None
-    else:
-        for doc in docs:
-            ts = doc["timestamp"]
-            if ts in funding_aligned.index:
-                row = funding_aligned.loc[ts]
-                doc["Funding_Rate"] = None if pd.isna(row.get("Funding_Rate")) else row["Funding_Rate"]
-                doc["Mark_Price"] = None if pd.isna(row.get("Mark_Price")) else row["Mark_Price"]
-                doc["Basis_Pct"] = None if pd.isna(row.get("Basis_Pct")) else row["Basis_Pct"]
-            else:
-                doc["Funding_Rate"] = None
-                doc["Mark_Price"] = None
-                doc["Basis_Pct"] = None
-    return docs
-
-
-# ---------------------------------------------------------------------------
 # Perpetual Futures — seed / update / backfill
 # ---------------------------------------------------------------------------
 
@@ -498,14 +376,18 @@ def _fetch_and_store_funding(
     since_ms: int,
     test: bool,
     tag: str = "perp",
-) -> pd.DataFrame:
+    limit: int = 500,
+):
     """Fetch funding rate history and upsert into the funding collection.
 
-    Returns the funding DataFrame (may be empty on failure).
+    Raw 8h funding rates are stored separately in {token}_funding_rate_data.
+    The consumer (Crypto_Research_Assistant) aggregates them per-timeframe
+    via its own merge_funding_to_ohlcv() loader function.
+
     Follows the same graceful-fallback pattern as FnG.
     """
     try:
-        funding_df = fetch_funding_rate_history(symbol, since_ms=since_ms)
+        funding_df = fetch_funding_rate_history(symbol, since_ms=since_ms, limit=limit)
         if not funding_df.empty:
             funding_docs_raw = []
             for ts, row in funding_df.iterrows():
@@ -514,10 +396,8 @@ def _fetch_and_store_funding(
                 funding_docs_raw.append(doc)
             n_funding = bulk_upsert_funding(symbol, funding_docs_raw, test)
             print(f"[{tag}] Stored {n_funding} funding rate records")
-        return funding_df
     except Exception as e:
         print(f"[{tag}] WARNING: funding rate fetch failed: {e}")
-        return pd.DataFrame()
 
 
 def run_perp_seed(
@@ -526,7 +406,11 @@ def run_perp_seed(
     test: bool = False,
     count: int = SEED_WINDOW,
 ):
-    """Seed perpetual futures OHLCV with indicators and funding rates."""
+    """Seed perpetual futures OHLCV with indicators.
+
+    Also fetches and stores raw funding rates in a separate collection.
+    Funding rate aggregation into OHLCV is the consumer's responsibility.
+    """
     _sync_glossary(test)
     print(f"[perp-seed] {symbol} {timeframe} (test={test}) — fetching {count} candles...")
     ensure_indexes(symbol, timeframe, test, market_type="perp")
@@ -538,31 +422,24 @@ def run_perp_seed(
         print(f"[perp-seed] No candles returned for {symbol} {timeframe}")
         return
 
-    # 2. Fetch and store funding rates for the period
+    # 2. Fetch and store raw funding rates (separate collection)
     since_ms = int(df.index.min().timestamp() * 1000)
-    funding_df = _fetch_and_store_funding(symbol, since_ms, test, tag="perp-seed")
+    _fetch_and_store_funding(symbol, since_ms, test, tag="perp-seed")
 
-    # 3. Align funding to candle timeframe
-    funding_aligned = (
-        _align_funding_to_candles(funding_df, df, timeframe)
-        if not funding_df.empty else None
-    )
-
-    # 4. Compute indicators
+    # 3. Compute indicators
     print(f"[perp-seed] Fetched {len(df)} candles, computing indicators...")
     df = compute_all(df, timeframe)
 
-    # 5. Drop NaN rows
+    # 4. Drop NaN rows
     numeric_cols = get_numeric_cols()
     present_cols = [c for c in numeric_cols if c in df.columns]
     df_clean = df.dropna(subset=present_cols)
 
-    # 6. Sentiment
+    # 5. Sentiment
     fng = fetch_fear_greed()
 
-    # 7. Build docs, merge funding + sentiment
+    # 6. Build docs, merge sentiment
     docs = _df_to_docs(df_clean)
-    docs = _merge_perp_funding(docs, funding_aligned)
     docs = _merge_sentiment(docs, fng)
 
     n = bulk_upsert(symbol, timeframe, docs, test, market_type="perp")
@@ -573,6 +450,8 @@ def run_perp_seed(
 def run_perp_update(symbol: str, timeframe: str, test: bool = False):
     """Incremental update for perpetual futures: detect gaps, fetch missing
     candles, recompute indicators on the sliding window, upsert new rows.
+
+    Also fetches and stores raw funding rates in a separate collection.
     """
     _sync_glossary(test)
     ensure_indexes(symbol, timeframe, test, market_type="perp")
@@ -599,10 +478,8 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
         print(f"[perp-update] No new candles returned for {symbol} {timeframe}")
         return
 
-    # Fetch and store funding rates for the gap period
-    funding_df = _fetch_and_store_funding(
-        symbol, fetch_since_ms, test, tag="perp-update"
-    )
+    # Fetch and store raw funding rates (separate collection)
+    _fetch_and_store_funding(symbol, fetch_since_ms, test, tag="perp-update")
 
     # Load sliding window
     df_window = load_latest(symbol, timeframe, limit=SLIDING_WINDOW, test=test, market_type="perp")
@@ -616,21 +493,6 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
     df_full.sort_index(inplace=True)
 
     df_full = compute_all(df_full, timeframe)
-
-    # Align funding to candle timeframe
-    if not funding_df.empty:
-        # Load all funding rates covering the full window for accurate alignment
-        window_start = df_full.index.min()
-        all_funding = load_funding_rates(symbol, test, since=window_start)
-        if not all_funding.empty:
-            funding_aligned = _align_funding_to_candles(all_funding, df_full, timeframe)
-        else:
-            funding_aligned = (
-                _align_funding_to_candles(funding_df, df_full, timeframe)
-                if not funding_df.empty else None
-            )
-    else:
-        funding_aligned = None
 
     # Fetch Fear & Greed once per update run
     fng = fetch_fear_greed()
@@ -652,7 +514,6 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
         doc["timestamp"] = ts
         new_docs.append(doc)
 
-    new_docs = _merge_perp_funding(new_docs, funding_aligned)
     new_docs = _merge_sentiment(new_docs, fng)
     n = bulk_upsert(symbol, timeframe, new_docs, test, market_type="perp")
     print(f"[perp-update] Upserted {n} new candles for {symbol} {timeframe}")
@@ -721,24 +582,10 @@ def run_perp_backfill(
     print(f"[perp-backfill] Fetched {len(df_exchange)} total candles from exchange "
           f"({df_exchange.index.min().date()} to {df_exchange.index.max().date()})")
 
-    # Step 2: Backfill funding rates for the same period
+    # Step 2: Backfill raw funding rates (separate collection)
     funding_since_ms = int(df_exchange.index.min().timestamp() * 1000)
     print(f"[perp-backfill] Fetching funding rate history...")
-    try:
-        funding_df = fetch_funding_rate_history(symbol, since_ms=funding_since_ms, limit=100_000)
-        if not funding_df.empty:
-            funding_docs_raw = []
-            for ts, row in funding_df.iterrows():
-                doc = row.to_dict()
-                doc["timestamp"] = ts
-                funding_docs_raw.append(doc)
-            n_funding = bulk_upsert_funding(symbol, funding_docs_raw, test)
-            print(f"[perp-backfill] Stored {n_funding} funding rate records")
-        else:
-            print(f"[perp-backfill] No funding rate data returned")
-    except Exception as e:
-        print(f"[perp-backfill] WARNING: funding rate fetch failed: {e}")
-        funding_df = pd.DataFrame()
+    _fetch_and_store_funding(symbol, funding_since_ms, test, tag="perp-backfill", limit=100_000)
 
     # Step 3: Load all existing data (OHLCV only)
     df_existing = load_all(symbol, timeframe, test, market_type="perp")
@@ -767,15 +614,8 @@ def run_perp_backfill(
     print(f"[perp-backfill] {len(df_clean)} rows after NaN drop "
           f"({len(df_merged) - len(df_clean)} warmup rows removed)")
 
-    # Step 7: Align funding to candles
-    if not funding_df.empty:
-        funding_aligned = _align_funding_to_candles(funding_df, df_clean, timeframe)
-    else:
-        funding_aligned = None
-
-    # Step 8: Build docs with FnG=None (historical) and funding data
+    # Step 7: Build docs with FnG=None (historical)
     docs = _df_to_docs(df_clean)
-    docs = _merge_perp_funding(docs, funding_aligned)
     for doc in docs:
         doc["FnG_Value"] = None
         doc["FnG_Class"] = None
@@ -784,7 +624,7 @@ def run_perp_backfill(
         print(f"[perp-backfill] DRY RUN — would upsert {len(docs)} documents. Skipping write.")
         return
 
-    # Step 9: Upsert in chunks
+    # Step 8: Upsert in chunks
     print(f"[perp-backfill] Upserting {len(docs)} documents...")
     n = bulk_upsert_chunked(symbol, timeframe, docs, test, market_type="perp")
     print(f"[perp-backfill] Done — upserted {n} documents for {symbol} {timeframe}")

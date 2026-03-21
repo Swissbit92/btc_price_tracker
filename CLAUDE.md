@@ -123,9 +123,9 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 | `db.py` | MongoDB connection + CRUD: all functions accept `market_type="spot"` param. Funding CRUD: load_funding_rates, bulk_upsert_funding, ensure_funding_indexes, upsert_funding_metadata |
 | `extract.py` | CCXT-based KuCoin **spot** data fetching: fetch_candles, fetch_seed_candles |
 | `extract_perp.py` | CCXT-based KuCoin **Futures** data fetching via `ccxt.kucoinfutures`: fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history |
-| `indicators.py` | Single source of truth for ~85 indicators + ML features + 3 derivatives columns: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY |
+| `indicators.py` | Single source of truth for ~85 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY |
 | `sentiment.py` | Fear & Greed Index fetcher: fetch_fear_greed() with graceful fallback |
-| `pipeline.py` | Orchestration: spot (run_seed, run_update, run_backfill + _all) and perp (run_perp_seed, run_perp_update, run_perp_backfill + _all). Funding alignment via _align_funding_to_candles() |
+| `pipeline.py` | Orchestration: spot (run_seed, run_update, run_backfill + _all) and perp (run_perp_seed, run_perp_update, run_perp_backfill + _all). Raw funding rates stored separately |
 | `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare and --glossary modes |
 
 ### Technical Indicators (~85 numeric + 1 string column)
@@ -142,8 +142,6 @@ Computed by `indicators.py` using `pandas-ta-classic`:
 **ML Features:** Z-scores (Close/RSI/Volume, 100-period), Candle body/wick ratios (ATR-normalized), Price vs EMA20/SMA200 (ATR-normalized), RSI slope (3), MACD slope (3)
 **Derived:** Log returns (1, 4, 12, 24 periods), temporal features (hour/dow sin/cos)
 **Sentiment:** Fear & Greed Index (FnG_Value: 0-100 int, FnG_Class: string)
-**Derivatives (perp collections only):** Funding_Rate (aggregated per candle period), Mark_Price (at closest settlement), Basis_Pct ((mark-index)/index*100). These are pipeline-injected, not computed by `compute_all()`. Excluded from NaN validation.
-
 When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `INDICATOR_GLOSSARY` if adding/removing columns (`get_numeric_cols()` derives from it automatically). Also update the glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md) to keep the human-readable reference in sync.
 
 ### Flask App (`app.py`)
