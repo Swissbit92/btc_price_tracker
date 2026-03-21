@@ -45,8 +45,8 @@ Extending `btc_price_tracker` to fetch perpetual futures OHLCV + funding rate da
 | 8: MCP server | COMPLETE | 2026-03-21 | MCP | market_type param on 4 tools, list_collections returns 91 entries, new query_funding_rates tool. QA: passed. |
 | 9: Unit tests | COMPLETE | 2026-03-21 | Tests | 64 tests across 4 files. QA: rejected once (fragile `is None` assertions, missing fallback test), fixed and re-passed. Tests also found+fixed a timezone bug in _align_funding_to_candles. |
 | 10: Metadata seeding | COMPLETE | 2026-03-21 | Metadata | seed_funding_metadata() + _KUCOIN_CONTRACT_MAP (13 tokens, BTC=XBTUSDTM). QA: passed. |
-| Test DB validation | | | QA | All 8 verification gates |
-| Production deploy | | | QA | Live perp data flowing |
+| Test DB validation | COMPLETE | 2026-03-21 | QA | Gates 1-6 passed. Found KuCoin Futures 200-candle/request limit (fixed). Gate 7 (full backfill) deferred — pipeline proven via dry run. |
+| Production deploy | PENDING | | QA | Ready after full backfill |
 
 ## Architecture Decisions
 
@@ -59,6 +59,9 @@ Extending `btc_price_tracker` to fetch perpetual futures OHLCV + funding rate da
 - **2026-03-21 (Phase 3 QA):** `period_start` stored as UTC datetime in MongoDB must be explicitly converted with `pd.to_datetime(..., utc=True)` when loaded back, otherwise timezone-aware comparisons fail silently.
 - **2026-03-21 (Phase 9):** Tests found a pandas 2.x timezone-stripping bug in `_align_funding_to_candles`: `.values` on a UTC-aware Series produces timezone-naive `datetime64[ns]`. Fixed by using Series directly instead of `.values`.
 - **2026-03-21 (Phase 9 QA):** Never use `is None` to check pandas cell values — use `pd.isna()`. Single-element DataFrames may preserve `None` as `object` dtype (fragile coincidence), but multi-element DataFrames convert to `NaN`.
+- **2026-03-21 (Gate 3):** KuCoin Futures returns max **200 candles per request** (not 500 like spot). Fixed batch_size in extract_perp.py from 500 to 200. Pagination works correctly after fix.
+- **2026-03-21 (Gate 3):** KuCoin funding rate response does NOT include `markPrice` or `indexPrice` — both are `None`. `basis_pct` will always be `None`. This is a KuCoin API limitation; Binance would provide these fields.
+- **2026-03-21 (Gate 6):** BTC perp daily: 2,183 candles available from 2020-03-30 to present. 5,049 funding rate records available.
 
 ## Verification Results
 

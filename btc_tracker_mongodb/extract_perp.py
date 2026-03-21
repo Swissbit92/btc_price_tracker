@@ -67,7 +67,7 @@ def fetch_perp_candles(
     remaining = limit
 
     while remaining > 0:
-        batch_size = min(remaining, 500)  # KuCoin max per request
+        batch_size = min(remaining, 200)  # KuCoin Futures max per request (not 500 like spot)
         ohlcv = ex.fetch_ohlcv(ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size)
         if not ohlcv:
             break
