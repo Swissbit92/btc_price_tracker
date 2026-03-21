@@ -31,3 +31,8 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: python update.py --all --timeframe 1d --market-type perp
+
+      - name: Run weekly update for all tokens (spot)
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: python update.py --all --timeframe 1w

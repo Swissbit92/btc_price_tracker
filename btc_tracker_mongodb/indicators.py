@@ -987,8 +987,8 @@ def _compute_adx(df: pd.DataFrame):
 
 def _compute_vwap(df: pd.DataFrame, timeframe: str = "1h"):
     tp = (df["High"] + df["Low"] + df["Close"]) / 3
-    if timeframe == "1d":
-        # Cumulative VWAP for daily — no session reset needed
+    if timeframe in ("1d", "1w"):
+        # Cumulative VWAP for daily/weekly — no session reset needed
         df["VWAP"] = (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
     else:
         # Rolling 24-bar VWAP for intraday (1h=24h session, 4h=4-day window)

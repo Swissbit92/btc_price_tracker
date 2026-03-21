@@ -35,6 +35,7 @@ def _timedelta_for(timeframe: str) -> timedelta:
         "1h": timedelta(hours=1),
         "4h": timedelta(hours=4),
         "1d": timedelta(days=1),
+        "1w": timedelta(weeks=1),
     }[timeframe]
 
 
@@ -44,6 +45,11 @@ def _floor_timestamp(dt: datetime, timeframe: str) -> datetime:
         return dt.replace(minute=0, second=0, microsecond=0)
     elif timeframe == "4h":
         return dt.replace(hour=(dt.hour // 4) * 4, minute=0, second=0, microsecond=0)
+    elif timeframe == "1w":
+        # Floor to Monday 00:00 UTC
+        days_since_monday = dt.weekday()
+        monday = dt - timedelta(days=days_since_monday)
+        return monday.replace(hour=0, minute=0, second=0, microsecond=0)
     else:  # 1d
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -328,9 +334,8 @@ def run_backfill_all(
     skip_btc: bool = False,
     since: str = None,
 ):
-    """Run backfill for all tokens. Process order: 1d -> 4h -> 1h."""
-    # Order timeframes: daily first (smallest), then 4h, then 1h
-    tf_order = ["1d", "4h", "1h"]
+    """Run backfill for all tokens. Process order: 1w -> 1d -> 4h -> 1h."""
+    tf_order = ["1w", "1d", "4h", "1h"]
     timeframes = [timeframe] if timeframe else tf_order
     timeframes = [tf for tf in tf_order if tf in timeframes]
 
@@ -671,8 +676,8 @@ def run_perp_backfill_all(
     skip_btc: bool = False,
     since: str = None,
 ):
-    """Run perp backfill for all tokens. Process order: 1d -> 4h -> 1h."""
-    tf_order = ["1d", "4h", "1h"]
+    """Run perp backfill for all tokens. Process order: 1w -> 1d -> 4h -> 1h."""
+    tf_order = ["1w", "1d", "4h", "1h"]
     timeframes = [timeframe] if timeframe else tf_order
     timeframes = [tf for tf in tf_order if tf in timeframes]
 

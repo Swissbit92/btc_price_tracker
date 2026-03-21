@@ -7,7 +7,7 @@ TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT",
           "TON-USDT", "DOT-USDT", "NEAR-USDT"]
 
 # internal name -> KuCoin API candle type
-TIMEFRAMES = {"1h": "1hour", "4h": "4hour", "1d": "1day"}
+TIMEFRAMES = {"1h": "1hour", "4h": "4hour", "1d": "1day", "1w": "1week"}
 
 MARKET_TYPES = ["spot", "perp"]
 
@@ -23,8 +23,8 @@ SEED_WINDOW = 500
 
 KUCOIN_BASE = "https://api.kucoin.com"
 
-METADATA_COLLECTION = "indicator_metadata"
-FUNDING_METADATA_COLLECTION = "funding_rate_metadata"
+METADATA_COLLECTION = "indicator_glossary"
+FUNDING_METADATA_COLLECTION = "funding_rate_glossary"
 
 
 def get_collection_name(symbol: str, timeframe: str, market_type: str = "spot") -> str:
@@ -37,7 +37,7 @@ def get_collection_name(symbol: str, timeframe: str, market_type: str = "spot") 
         'SOL-USDT' + '1d' + 'perp' -> 'sol_perp_daily_price_data'
     """
     token = symbol.split("-")[0].lower()
-    tf_map = {"1h": "1h", "4h": "4h", "1d": "daily"}
+    tf_map = {"1h": "1h", "4h": "4h", "1d": "daily", "1w": "weekly"}
     if market_type == "perp":
         return f"{token}_perp_{tf_map[timeframe]}_price_data"
     return f"{token}_{tf_map[timeframe]}_price_data"
