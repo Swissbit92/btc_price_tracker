@@ -5,7 +5,7 @@
 
 > **Programmatic access:** The glossary is also stored in MongoDB as a self-describing document. Query it from any consumer:
 > ```python
-> db.indicator_metadata.find_one({"_id": "indicator_glossary"})
+> db.indicator_glossary.find_one({"_id": "indicator_glossary"})
 > ```
 > The document includes column names, descriptions, categories, ranges, and a `schema_hash` for change detection. It is automatically synced on every pipeline run (seed or update).
 

@@ -4,11 +4,12 @@
 
 ## 🚀 Project Overview
 
-The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches hourly, 4-hourly, and daily OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, and NEAR** (13 USDT pairs) from KuCoin via CCXT, computes a comprehensive suite of 85 technical indicators + ML features, fetches the Fear & Greed Index, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
+The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches daily and weekly OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, and NEAR** (13 USDT pairs) from KuCoin via CCXT — both **spot** and **perpetual futures** markets — computes 85 technical indicators + ML features, fetches the Fear & Greed Index and funding rates, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
 
-- **Multi-Token Support**: Tracks 13 tokens across 1h, 4h, and daily timeframes (39 collections).
-- **Historical Seeding**: Backfills up to 500 candles per token/timeframe in one go.
-- **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for daily, Jan 2020 for 4h) for strategy backtesting.
+- **Multi-Token, Multi-Market Support**: Tracks 13 tokens across daily + weekly timeframes for spot, plus daily perpetual futures with 8h funding rate history.
+- **Perpetual Futures Pipeline**: Fetches perp OHLCV from KuCoin Futures via `ccxt.kucoinfutures`, stores raw 8h funding rates separately for consumer-side aggregation.
+- **Historical Seeding**: Backfills up to 500+ candles per token/timeframe in one go.
+- **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for spot daily, Jan 2020 for perp daily) for strategy backtesting.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
 - **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.
@@ -29,11 +30,11 @@ Before you can run the Bitcoin Cloud Price Tracker, make sure you have:
 
 ### 1. Accounts & Services
 
-- **KuCoin Account**  
-  - Create a free KuCoin account and generate an API key & secret (no IP‐whitelist).  
+- **KuCoin Account**
+  - No API key required — uses public endpoints only (spot + futures).
 - **MongoDB Atlas**
   - Sign up for the free tier, create a cluster and a database named `btc_data`.
-  - Collections are created automatically by the seed scripts (e.g. `btc_1h_price_data`, `eth_daily_price_data`).
+  - Collections are created automatically by the seed scripts (e.g. `btc_daily_price_data`, `btc_perp_daily_price_data`, `btc_funding_rate_data`).
   - Create a database user with read/write permissions.
 
 ### 2. Local Tools
@@ -114,35 +115,40 @@ Create a `.env` file in the project root:
     ```
 
 - **🔄 Start Updates**
-  - GitHub Actions workflows are preconfigured for hourly + daily updates of all tokens.
+  - GitHub Actions workflow runs daily updates (spot + perp + weekly) automatically.
   - Ensure your GitHub **Secret** `MONGODB_URI` is set.
   - Run manually for testing:
     ```bash
-    python update.py --all --timeframe 1h
+    python update.py --all --timeframe 1d
+    python update.py --all --timeframe 1d --market-type perp
     ```
 
 ## ☁️ Architecture & Cloud Deployment
 
 - **🌐 Data Source**
-  - KuCoin Public API via CCXT (13 USDT pairs: BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR — no auth required)
+  - KuCoin Public API via CCXT — spot (13 USDT pairs) + KuCoin Futures (13 perp contracts) — no auth required
 
 - **🗄️ Cloud Database**
   - MongoDB Atlas (Free tier M0)
   - Database: `btc_data`
-  - Collections: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data` (39 total) + `indicator_metadata` (glossary)
+  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data` (13 daily + 11 weekly)
+  - Perp collections: `{token}_perp_daily_price_data` (13 collections)
+  - Funding rate collections: `{token}_funding_rate_data` (13 collections, raw 8h granularity)
+  - Glossary: `indicator_glossary`, `funding_rate_glossary`
 
 - **🐍 Processing Pipeline**
-  - `seed.py` — initial backfill (500 candles per token/timeframe)
+  - `seed.py` — initial backfill (500+ candles per token/timeframe, `--market-type perp` for futures)
   - `backfill.py` — deep historical backfill (max available KuCoin history)
   - `update.py` — incremental updates with gap detection
+  - `btc_tracker_mongodb/extract.py` — spot OHLCV fetching via `ccxt.kucoin`
+  - `btc_tracker_mongodb/extract_perp.py` — perp OHLCV + funding rate fetching via `ccxt.kucoinfutures`
   - `btc_tracker_mongodb/indicators.py` — 85 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
-  - `mcp_server.py` — read-only MCP server for Claude Code integration (6 tools)
+  - `mcp_server.py` — read-only MCP server for Claude Code integration (7 tools)
   - Dependencies: `ccxt` (pinned 4.5.40), `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
 - **🔄 Automation & CI/CD**
   - **GitHub Actions**
-    - `update-hourly.yml`: cron `0 * * * *` — `python update.py --all --timeframe 1h`
-    - `update-daily.yml`: cron `5 1 * * *` — `python update.py --all --timeframe 1d`
+    - `update-daily.yml`: cron `5 1 * * *` — spot daily + perp daily + spot weekly updates
     - Python 3.11, deps from `requirements.txt`
   - **⚙️ (Optional) GCP Cloud Run + Cloud Scheduler**
     - Containerized service via `Dockerfile`
@@ -152,9 +158,10 @@ Create a `.env` file in the project root:
   - **Local .env** for development
 
 - **🤖 MCP Server (Claude Code Integration)**
-  - `mcp_server.py` exposes 6 read-only tools for querying MongoDB directly from Claude Code conversations
+  - `mcp_server.py` exposes 7 read-only tools for querying MongoDB directly from Claude Code conversations
   - Registered via `.mcp.json` — auto-discovered when Claude Code opens the project
-  - Tools: `list_collections`, `query_price_data`, `get_latest_price`, `get_indicator_glossary`, `get_collection_stats`, `query_by_date_range`
+  - Tools: `list_collections`, `query_price_data`, `get_latest_price`, `get_indicator_glossary`, `get_collection_stats`, `query_by_date_range`, `query_funding_rates`
+  - Supports `market_type="spot"` or `"perp"` on price data tools
   - All tools accept flexible symbol input (`"BTC"`, `"btc"`, or `"BTC-USDT"`) and return JSON
   - Uses stdio transport; reuses existing `db.py` connection and config constants
 
@@ -191,12 +198,12 @@ Create a `.env` file in the project root:
 - **📜 Deep Historical Backfill**
   - Fetch max available history from KuCoin for backtesting:
     ```bash
-    python backfill.py --all --timeframe 1d --skip-btc        # all altcoins, daily
-    python backfill.py --all --timeframe 4h                    # all tokens, 4h
-    python backfill.py --symbol BTC-USDT --timeframe 4h --since 2017-10-01  # custom start
+    python backfill.py --all --timeframe 1d --skip-btc        # all altcoins, spot daily
+    python backfill.py --all --timeframe 1d --market-type perp # all tokens, perp daily
+    python backfill.py --all --timeframe 1w                    # all tokens, spot weekly
     python backfill.py --all --test --dry-run                  # preview without writing
     ```
-  - Default start dates: Oct 2017 (daily), Jan 2020 (4h/1h). Override with `--since`.
+  - Default start dates: Oct 2017 (spot daily/weekly), Jan 2020 (perp). Override with `--since`.
   - Safe to re-run — upsert semantics handle duplicates. Per-token error isolation.
 
 - **📊 Querying the Database**
@@ -237,12 +244,13 @@ Create a `.env` file in the project root:
 
     | Tool | What it does |
     |------|-------------|
-    | `list_collections()` | Lists all 39 token/timeframe/collection combos |
-    | `query_price_data(symbol, timeframe, limit, fields)` | Latest N docs with optional field filtering |
-    | `get_latest_price(symbol, timeframe)` | Single most recent document (quick snapshot) |
+    | `list_collections()` | Lists all collections (spot, perp, funding, weekly) |
+    | `query_price_data(symbol, timeframe, limit, fields, market_type)` | Latest N docs, `market_type="spot"` or `"perp"` |
+    | `get_latest_price(symbol, timeframe, market_type)` | Single most recent document |
     | `get_indicator_glossary()` | Indicator descriptions, categories, and ranges |
-    | `get_collection_stats(symbol, timeframe)` | Doc count, date range, column list |
-    | `query_by_date_range(symbol, start, end, timeframe, fields, limit)` | Query within a date range |
+    | `get_collection_stats(symbol, timeframe, market_type)` | Doc count, date range, column list |
+    | `query_by_date_range(symbol, start, end, timeframe, fields, limit, market_type)` | Query within a date range |
+    | `query_funding_rates(symbol, limit, start_date, end_date)` | 8h funding rate history |
 
   - All tools accept flexible symbol input: `"BTC"`, `"btc"`, or `"BTC-USDT"` all work.
   - Requires `MONGODB_URI` in `.env` (same as the rest of the project).
@@ -353,7 +361,7 @@ With these practices in place, you’ll have a rock-solid development workflow a
 ## 🔒 Security & Secrets Management
 
 - **🗝️ Secrets Storage**  
-  - **GitHub Secrets**: Store `MONGODB_URI`, `KUCOIN_API_KEY`, `KUCOIN_API_SECRET` in **Settings → Secrets → Actions**.  
+  - **GitHub Secrets**: Store `MONGODB_URI` in **Settings → Secrets → Actions**. No KuCoin API keys needed (public endpoints only).  
   - **Local `.env`**: Keep your `.env` file out of version control; confirm `.gitignore` includes `.env`.  
 
 - **🔑 Key Rotation**  
@@ -389,22 +397,23 @@ With these practices in place, you’ll have a rock-solid development workflow a
 ## ⚙️ CI/CD Workflow
 
 - **🛠️ GitHub Actions Workflows**
-  - `update-hourly.yml`: cron `0 * * * *` — updates all 13 tokens hourly
-  - `update-4h.yml`: cron `0 */4 * * *` — updates all 13 tokens every 4 hours
-  - `update-daily.yml`: cron `5 1 * * *` — updates all 13 tokens daily
+  - `update-daily.yml`: cron `5 1 * * *` — updates all 13 tokens (spot daily + perp daily + spot weekly)
   - Triggers: schedule + `workflow_dispatch` (manual)
   - Secret: `MONGODB_URI`
+  - **Note:** 1h and 4h workflows removed — all strategies are daily-only. Infrastructure supports all timeframes for future re-population.
 
 - **🔄 Core Steps**
   1. **📥 Checkout** your repo
   2. **🐍 Setup Python** 3.11
   3. **📦 Install deps** (`pip install -r requirements.txt`)
-  4. **🚀 Run updater**
+  4. **🚀 Run updaters** (spot daily → perp daily → spot weekly)
      ```yaml
-     - name: Run hourly update for all tokens
-       env:
-         MONGODB_URI: ${{ secrets.MONGODB_URI }}
-       run: python update.py --all --timeframe 1h
+     - name: Run daily update for all tokens (spot)
+       run: python update.py --all --timeframe 1d
+     - name: Run daily update for all tokens (perp)
+       run: python update.py --all --timeframe 1d --market-type perp
+     - name: Run weekly update for all tokens (spot)
+       run: python update.py --all --timeframe 1w
      ```
 
 - **🎯 Build & Deploy (Optional)**  

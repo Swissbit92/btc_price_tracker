@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Supports both **spot** and **perpetual futures** market types. Runs autonomously via GitHub Actions (hourly, 4-hourly, and daily cron jobs) or optionally via GCP Cloud Run.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Supports both **spot** and **perpetual futures** market types. Runs autonomously via GitHub Actions (daily cron) or optionally via GCP Cloud Run.
 
 ## Commands
 
@@ -103,23 +103,24 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 ### MongoDB Schema
 
 - Database: `btc_data` (production), `btc_data_test` (testing)
-- Collection naming: `{token}_1h_price_data`, `{token}_4h_price_data`, `{token}_daily_price_data`
-  - e.g. `btc_1h_price_data`, `eth_4h_price_data`, `sol_daily_price_data`, `doge_1h_price_data`
-- Each document is keyed by `timestamp` (UTC datetime); unique index enforced
-- 13 tokens x 3 timeframes = 39 spot collections total
-- **Perpetual futures collections:** `{token}_perp_1h_price_data`, `{token}_perp_4h_price_data`, `{token}_perp_daily_price_data`
-  - e.g. `btc_perp_1h_price_data`, `eth_perp_4h_price_data`, `sol_perp_daily_price_data`
-  - 13 tokens x 3 timeframes = 39 perp collections
-- **Funding rate collections:** `{token}_funding_rate_data` (per-token, 8h granularity)
+- **Spot collections:** `{token}_daily_price_data`, `{token}_weekly_price_data`
+  - e.g. `btc_daily_price_data`, `eth_weekly_price_data`
+  - 13 daily + 11 weekly (SUI/TON too short for weekly SMA_200)
+- **Perp collections:** `{token}_perp_daily_price_data`
+  - e.g. `btc_perp_daily_price_data`, `eth_perp_daily_price_data`
+  - 13 collections (daily only — KuCoin Futures doesn't support weekly candles)
+- **Funding rate collections:** `{token}_funding_rate_data` (per-token, raw 8h granularity)
   - e.g. `btc_funding_rate_data`, `eth_funding_rate_data` — 13 collections
-- `funding_rate_metadata` collection: per-token metadata (exchange, contract symbol, settlement schedule)
-- `indicator_metadata` collection: stores a single `indicator_glossary` document with column descriptions, categories, ranges, and a `schema_hash` for change detection. Auto-synced on every pipeline run.
+- Each document is keyed by `timestamp` (UTC datetime); unique index enforced
+- `indicator_glossary` collection: indicator descriptions, categories, ranges, schema_hash. Auto-synced on every pipeline run.
+- `funding_rate_glossary` collection: per-token metadata (exchange, contract symbol, settlement schedule)
+- **Production timeframes:** Daily + weekly only. 1h/4h dropped (all strategies daily-only). Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
 | File | Purpose |
 |---|---|
-| `config.py` | Central config: TOKENS (13), TIMEFRAMES (3), MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping (`market_type` param) |
+| `config.py` | Central config: TOKENS (13), TIMEFRAMES (4: 1h, 4h, 1d, 1w), MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping (`market_type` param) |
 | `db.py` | MongoDB connection + CRUD: all functions accept `market_type="spot"` param. Funding CRUD: load_funding_rates, bulk_upsert_funding, ensure_funding_indexes, upsert_funding_metadata |
 | `extract.py` | CCXT-based KuCoin **spot** data fetching: fetch_candles, fetch_seed_candles |
 | `extract_perp.py` | CCXT-based KuCoin **Futures** data fetching via `ccxt.kucoinfutures`: fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history |
@@ -150,10 +151,11 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 
 ### Automation
 
-- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs spot + perp daily updates
-  - Step 1: `python update.py --all --timeframe 1d` (spot)
-  - Step 2: `python update.py --all --timeframe 1d --market-type perp` (perp)
-- **Daily-only production:** 1h and 4h workflows removed (all strategies are daily-only; 4h/1h data dropped to fit 512 MB Atlas free tier). Infrastructure supports all timeframes — re-populate via `backfill.py --all --timeframe 4h` when needed.
+- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs all updates:
+  - Step 1: `python update.py --all --timeframe 1d` (spot daily)
+  - Step 2: `python update.py --all --timeframe 1d --market-type perp` (perp daily)
+  - Step 3: `python update.py --all --timeframe 1w` (spot weekly)
+- **Daily + weekly production:** 1h and 4h workflows removed (all strategies are daily-only; data dropped to fit 512 MB Atlas free tier). Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
 - Secret required in GitHub Actions: `MONGODB_URI`
 
 ## Environment Variables
@@ -174,8 +176,8 @@ Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env v
 - CCXT handles KuCoin rate limiting automatically (`enableRateLimit: True`).
 - Python version: 3.11 locally (venv) and in CI.
 - Fear & Greed API is free, no signup: `https://api.alternative.me/fng/`. Graceful fallback if unreachable.
-- VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily.
-- `compute_all()` takes a `timeframe` parameter ("1h", "4h", "1d") that affects VWAP calculation.
+- VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily and weekly.
+- `compute_all()` takes a `timeframe` parameter ("1h", "4h", "1d", "1w") that affects VWAP calculation.
 - Migration status tracked in `docs/MIGRATION.md`.
 
 ## MCP Server (`mcp_server.py`)
@@ -186,7 +188,7 @@ Read-only MCP server that exposes MongoDB data to Claude Code via 7 tools. Regis
 
 | Tool | Purpose |
 |------|---------|
-| `list_collections()` | List all 91 collections: 39 spot + 39 perp + 13 funding (no DB call) |
+| `list_collections()` | List all collections: spot + perp + weekly + funding (no DB call) |
 | `query_price_data(symbol, timeframe, limit, fields, market_type)` | Latest N docs, optional field filtering. `market_type="spot"` or `"perp"` |
 | `get_latest_price(symbol, timeframe, market_type)` | Single most recent document |
 | `get_indicator_glossary()` | Fetch indicator glossary from metadata collection |
