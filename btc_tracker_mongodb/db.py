@@ -3,6 +3,7 @@ db.py — MongoDB connection and CRUD operations.
 """
 
 import os
+from datetime import datetime, timezone
 import pandas as pd
 from pymongo import MongoClient, UpdateOne, DESCENDING
 from dotenv import load_dotenv
@@ -242,6 +243,32 @@ def ensure_funding_indexes(symbol: str, test: bool = False):
     """Create a unique ascending index on timestamp for funding rate collection."""
     coll = get_funding_collection(symbol, test)
     coll.create_index("timestamp", unique=True)
+
+
+def upsert_token_metadata(test: bool = False):
+    """Upsert per-token metadata and timeframe glossary into token_metadata collection."""
+    from .config import TOKEN_METADATA, TIMEFRAME_GLOSSARY, TOKEN_METADATA_COLLECTION
+
+    db = get_db(test)
+    coll = db[TOKEN_METADATA_COLLECTION]
+
+    for symbol, meta in TOKEN_METADATA.items():
+        token = symbol.split("-")[0].lower()
+        doc = {
+            "_id": f"{token}_metadata",
+            "symbol": symbol,
+            "token": token.upper(),
+            **meta,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        coll.update_one({"_id": doc["_id"]}, {"$set": doc}, upsert=True)
+
+    tf_doc = {
+        "_id": "timeframe_glossary",
+        "timeframes": TIMEFRAME_GLOSSARY,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    coll.update_one({"_id": "timeframe_glossary"}, {"$set": tf_doc}, upsert=True)
 
 
 def upsert_funding_metadata(symbol: str, metadata: dict, test: bool = False):

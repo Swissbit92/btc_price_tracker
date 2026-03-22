@@ -25,6 +25,147 @@ KUCOIN_BASE = "https://api.kucoin.com"
 
 METADATA_COLLECTION = "indicator_glossary"
 FUNDING_METADATA_COLLECTION = "funding_rate_glossary"
+TOKEN_METADATA_COLLECTION = "token_metadata"
+
+# ---------------------------------------------------------------------------
+# Per-token metadata (synced to MongoDB token_metadata collection)
+# ---------------------------------------------------------------------------
+
+TOKEN_METADATA = {
+    "BTC-USDT": {
+        "name": "Bitcoin",
+        "exchange": "kucoin",
+        "perp_contract": "XBTUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "ETH-USDT": {
+        "name": "Ethereum",
+        "exchange": "kucoin",
+        "perp_contract": "ETHUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "SOL-USDT": {
+        "name": "Solana",
+        "exchange": "kucoin",
+        "perp_contract": "SOLUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "XRP-USDT": {
+        "name": "XRP",
+        "exchange": "kucoin",
+        "perp_contract": "XRPUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "BNB-USDT": {
+        "name": "BNB",
+        "exchange": "kucoin",
+        "perp_contract": "BNBUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "DOGE-USDT": {
+        "name": "Dogecoin",
+        "exchange": "kucoin",
+        "perp_contract": "DOGEUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "AVAX-USDT": {
+        "name": "Avalanche",
+        "exchange": "kucoin",
+        "perp_contract": "AVAXUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "LINK-USDT": {
+        "name": "Chainlink",
+        "exchange": "kucoin",
+        "perp_contract": "LINKUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "ADA-USDT": {
+        "name": "Cardano",
+        "exchange": "kucoin",
+        "perp_contract": "ADAUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "SUI-USDT": {
+        "name": "Sui",
+        "exchange": "kucoin",
+        "perp_contract": "SUIUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "TON-USDT": {
+        "name": "Toncoin",
+        "exchange": "kucoin",
+        "perp_contract": "TONUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "DOT-USDT": {
+        "name": "Polkadot",
+        "exchange": "kucoin",
+        "perp_contract": "DOTUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "NEAR-USDT": {
+        "name": "NEAR Protocol",
+        "exchange": "kucoin",
+        "perp_contract": "NEARUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Timeframe glossary (synced alongside token metadata)
+# ---------------------------------------------------------------------------
+
+TIMEFRAME_GLOSSARY = {
+    "1d": {
+        "name": "Daily",
+        "interval": "24 hours",
+        "description": "One candle per calendar day (UTC midnight close)",
+        "production": True,
+        "market_types": ["spot", "perp"],
+    },
+    "1w": {
+        "name": "Weekly",
+        "interval": "7 days",
+        "description": "One candle per week (Monday open to Sunday close, UTC)",
+        "production": True,
+        "market_types": ["spot"],
+    },
+    "1h": {
+        "name": "Hourly",
+        "interval": "1 hour",
+        "description": "One candle per hour. Not in production — re-populate via backfill when needed.",
+        "production": False,
+        "market_types": ["spot", "perp"],
+    },
+    "4h": {
+        "name": "4-Hour",
+        "interval": "4 hours",
+        "description": "One candle per 4 hours. Not in production — re-populate via backfill when needed.",
+        "production": False,
+        "market_types": ["spot", "perp"],
+    },
+    "8h": {
+        "name": "8-Hour (Funding)",
+        "interval": "8 hours",
+        "description": "Funding rate settlement interval. 3x per day at 00:00, 08:00, 16:00 UTC.",
+        "production": True,
+        "market_types": ["funding"],
+    },
+}
 
 
 def get_collection_name(symbol: str, timeframe: str, market_type: str = "spot") -> str:

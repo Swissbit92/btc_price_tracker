@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
 from .db import (load_latest, load_all, get_latest_timestamp,
                  bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary,
-                 bulk_upsert_funding, ensure_funding_indexes)
+                 upsert_token_metadata, bulk_upsert_funding, ensure_funding_indexes)
 from .extract import fetch_candles, fetch_seed_candles
 from .extract_perp import fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history
 from .indicators import compute_all, get_numeric_cols
@@ -19,12 +19,13 @@ _glossary_synced = False
 
 
 def _sync_glossary(test: bool = False):
-    """Upsert the indicator glossary once per process lifetime."""
+    """Upsert the indicator glossary and token metadata once per process lifetime."""
     global _glossary_synced
     if _glossary_synced:
         return
     try:
         upsert_indicator_glossary(test)
+        upsert_token_metadata(test)
     except Exception as e:
         print(f"[glossary] WARNING: failed to sync glossary: {e}")
     _glossary_synced = True

@@ -1,9 +1,9 @@
 """
 mcp_server.py — Read-only MCP server for querying crypto price tracker MongoDB data.
 
-Exposes 7 tools for listing collections, querying price/indicator data,
-fetching the indicator glossary, inspecting collection stats, and querying
-perpetual futures funding rates.
+Exposes 8 tools for listing collections, querying price/indicator data,
+fetching the indicator glossary, token metadata, inspecting collection stats,
+and querying perpetual futures funding rates.
 """
 
 import json
@@ -20,7 +20,8 @@ sys.path.insert(0, ".")
 
 from btc_tracker_mongodb.config import (
     TOKENS, TIMEFRAMES, MARKET_TYPES,
-    get_collection_name, get_funding_collection_name, METADATA_COLLECTION,
+    get_collection_name, get_funding_collection_name,
+    METADATA_COLLECTION, TOKEN_METADATA_COLLECTION,
 )
 from btc_tracker_mongodb.db import get_collection, get_db, get_funding_collection, load_funding_rates
 
@@ -256,6 +257,35 @@ def get_indicator_glossary() -> str:
             })
         doc["_id"] = str(doc["_id"])
         return _to_json(doc)
+    except Exception as e:
+        return _to_json({"error": str(e)})
+
+
+@mcp.tool()
+def get_token_metadata(symbol: str = "") -> str:
+    """Get token metadata and timeframe glossary from the token_metadata collection.
+
+    Returns per-token info (name, exchange, perp contract, available market types
+    and timeframes) and the timeframe glossary.
+
+    Args:
+        symbol: Optional token — accepts 'BTC', 'btc', or 'BTC-USDT'. Empty returns all.
+    """
+    try:
+        db = get_db()
+        coll = db[TOKEN_METADATA_COLLECTION]
+        if symbol:
+            token = _normalize_symbol(symbol).split("-")[0].lower()
+            doc = coll.find_one({"_id": f"{token}_metadata"})
+            if doc is None:
+                return _to_json({"error": f"No metadata found for {symbol}"})
+            doc["_id"] = str(doc["_id"])
+            return _to_json(doc)
+        else:
+            docs = list(coll.find({}))
+            for d in docs:
+                d["_id"] = str(d["_id"])
+            return _to_json({"count": len(docs), "data": docs})
     except Exception as e:
         return _to_json({"error": str(e)})
 
