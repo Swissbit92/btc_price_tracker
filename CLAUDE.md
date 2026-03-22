@@ -105,7 +105,7 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 - Database: `btc_data` (production), `btc_data_test` (testing)
 - **Spot collections:** `{token}_daily_price_data`, `{token}_weekly_price_data`
   - e.g. `btc_daily_price_data`, `eth_weekly_price_data`
-  - 13 daily + 11 weekly (SUI/TON too short for weekly SMA_200)
+  - 13 daily + 13 weekly (SUI/TON have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history)
 - **Perp collections:** `{token}_perp_daily_price_data`
   - e.g. `btc_perp_daily_price_data`, `eth_perp_daily_price_data`
   - 13 collections (daily only — KuCoin Futures doesn't support weekly candles)

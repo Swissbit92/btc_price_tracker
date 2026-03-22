@@ -131,7 +131,7 @@ Create a `.env` file in the project root:
 - **🗄️ Cloud Database**
   - MongoDB Atlas (Free tier M0)
   - Database: `btc_data`
-  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data` (13 daily + 11 weekly)
+  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data` (13 daily + 13 weekly)
   - Perp collections: `{token}_perp_daily_price_data` (13 collections)
   - Funding rate collections: `{token}_funding_rate_data` (13 collections, raw 8h granularity)
   - Glossary: `indicator_glossary`, `funding_rate_glossary`

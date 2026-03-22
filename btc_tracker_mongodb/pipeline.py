@@ -54,6 +54,17 @@ def _floor_timestamp(dt: datetime, timeframe: str) -> datetime:
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def _validatable_cols(df) -> list[str]:
+    """Numeric indicator cols that have at least one non-NaN value.
+
+    Columns that are entirely NaN (insufficient history for that indicator)
+    are excluded so they don't cause all rows to be dropped.
+    """
+    numeric_cols = get_numeric_cols()
+    present = [c for c in numeric_cols if c in df.columns]
+    return [c for c in present if not df[c].isna().all()]
+
+
 def _merge_sentiment(docs: list[dict], fng: dict | None) -> list[dict]:
     """Merge Fear & Greed data into each document."""
     if fng is None:
@@ -84,10 +95,10 @@ def run_seed(symbol: str, timeframe: str, test: bool = False, count: int = SEED_
     print(f"[seed] Fetched {len(df)} candles, computing indicators...")
     df = compute_all(df, timeframe)
 
-    # Drop rows where required indicators are NaN
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df.columns]
-    df_clean = df.dropna(subset=present_cols)
+    # Drop rows where computable indicators are NaN (excludes all-NaN columns
+    # from tokens with insufficient history for long-window indicators)
+    valid_cols = _validatable_cols(df)
+    df_clean = df.dropna(subset=valid_cols)
 
     # Fetch Fear & Greed
     fng = fetch_fear_greed()
@@ -125,9 +136,8 @@ def run_seed_from_csv(
     print(f"[seed-csv] Loaded {len(df)} rows, computing indicators...")
     df = compute_all(df, timeframe)
 
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df.columns]
-    df_clean = df.dropna(subset=present_cols)
+    valid_cols = _validatable_cols(df)
+    df_clean = df.dropna(subset=valid_cols)
 
     fng = fetch_fear_greed()
 
@@ -182,8 +192,7 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
     fng = fetch_fear_greed()
 
     # Only upsert the newly fetched timestamps (not the window)
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df_full.columns]
+    valid_cols = _validatable_cols(df_full)
     new_docs = []
     for ts in df_missing.index:
         if ts not in df_full.index:
@@ -191,7 +200,7 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
         row = df_full.loc[ts]
         if isinstance(row, pd.DataFrame):
             row = row.iloc[-1]
-        if row[present_cols].isna().any():
+        if row[valid_cols].isna().any():
             print(f"[update] Skipping {ts}: NaN in indicators")
             continue
         doc = row.to_dict()
@@ -304,10 +313,9 @@ def run_backfill(
     print(f"[backfill] Computing indicators...")
     df_merged = compute_all(df_merged, timeframe)
 
-    # Step 5: Drop NaN warmup rows
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df_merged.columns]
-    df_clean = df_merged.dropna(subset=present_cols)
+    # Step 5: Drop NaN warmup rows (excludes all-NaN columns from short-history tokens)
+    valid_cols = _validatable_cols(df_merged)
+    df_clean = df_merged.dropna(subset=valid_cols)
     print(f"[backfill] {len(df_clean)} rows after NaN drop "
           f"({len(df_merged) - len(df_clean)} warmup rows removed)")
 
@@ -435,10 +443,9 @@ def run_perp_seed(
     print(f"[perp-seed] Fetched {len(df)} candles, computing indicators...")
     df = compute_all(df, timeframe)
 
-    # 4. Drop NaN rows
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df.columns]
-    df_clean = df.dropna(subset=present_cols)
+    # 4. Drop NaN rows (excludes all-NaN columns from short-history tokens)
+    valid_cols = _validatable_cols(df)
+    df_clean = df.dropna(subset=valid_cols)
 
     # 5. Sentiment
     fng = fetch_fear_greed()
@@ -503,8 +510,7 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
     fng = fetch_fear_greed()
 
     # Only upsert the newly fetched timestamps (not the window)
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df_full.columns]
+    valid_cols = _validatable_cols(df_full)
     new_docs = []
     for ts in df_missing.index:
         if ts not in df_full.index:
@@ -512,7 +518,7 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
         row = df_full.loc[ts]
         if isinstance(row, pd.DataFrame):
             row = row.iloc[-1]
-        if row[present_cols].isna().any():
+        if row[valid_cols].isna().any():
             print(f"[perp-update] Skipping {ts}: NaN in indicators")
             continue
         doc = row.to_dict()
@@ -612,10 +618,9 @@ def run_perp_backfill(
     print(f"[perp-backfill] Computing indicators...")
     df_merged = compute_all(df_merged, timeframe)
 
-    # Step 6: Drop NaN warmup rows
-    numeric_cols = get_numeric_cols()
-    present_cols = [c for c in numeric_cols if c in df_merged.columns]
-    df_clean = df_merged.dropna(subset=present_cols)
+    # Step 6: Drop NaN warmup rows (excludes all-NaN columns from short-history tokens)
+    valid_cols = _validatable_cols(df_merged)
+    df_clean = df_merged.dropna(subset=valid_cols)
     print(f"[perp-backfill] {len(df_clean)} rows after NaN drop "
           f"({len(df_merged) - len(df_clean)} warmup rows removed)")
 
