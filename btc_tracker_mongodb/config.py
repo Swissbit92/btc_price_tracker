@@ -37,7 +37,7 @@ TOKEN_METADATA = {
         "exchange": "kucoin",
         "perp_contract": "XBTUSDTM",
         "market_types": ["spot", "perp", "funding"],
-        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+        "timeframes": {"spot": ["1d", "1w", "1h"], "perp": ["1d", "1h"], "funding": ["8h"]},
     },
     "ETH-USDT": {
         "name": "Ethereum",
@@ -147,8 +147,8 @@ TIMEFRAME_GLOSSARY = {
     "1h": {
         "name": "Hourly",
         "interval": "1 hour",
-        "description": "One candle per hour. Not in production — re-populate via backfill when needed.",
-        "production": False,
+        "description": "One candle per hour. BTC only (spot + perp) in production.",
+        "production": True,
         "market_types": ["spot", "perp"],
     },
     "4h": {

@@ -412,6 +412,7 @@ python update.py --all --test
 
 **Phase G: COMPLETE** (2026-03-22) — Perpetual futures data pipeline. 13 perp daily + 13 funding rate collections live. See [docs/PERPETUAL_FUTURES.md](PERPETUAL_FUTURES.md).
 **Phase H: COMPLETE** (2026-03-22) — Storage optimization. Dropped 1h+4h collections (27 total, ~200 MB freed). Daily-only production. Hourly/4h GitHub Actions workflows deleted.
+**Phase I: COMPLETE** (2026-03-27) — Restored BTC-only 1h data (spot + perp) for external project consumption. Backfilled spot 1h from Jan 2020 (~54K docs), perp 1h from Dec 2024 (~11K docs, KuCoin Futures 1h history limit). New hourly workflow (`update-hourly.yml`) runs BTC-only. All other tokens remain daily+weekly only.
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).

@@ -103,18 +103,18 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 ### MongoDB Schema
 
 - Database: `btc_data` (production), `btc_data_test` (testing)
-- **Spot collections:** `{token}_daily_price_data`, `{token}_weekly_price_data`
+- **Spot collections:** `{token}_daily_price_data`, `{token}_weekly_price_data`, plus `btc_1h_price_data`
   - e.g. `btc_daily_price_data`, `eth_weekly_price_data`
-  - 13 daily + 13 weekly (SUI/TON have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history)
-- **Perp collections:** `{token}_perp_daily_price_data`
+  - 13 daily + 13 weekly + 1 hourly (BTC only). SUI/TON have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history.
+- **Perp collections:** `{token}_perp_daily_price_data`, plus `btc_perp_1h_price_data`
   - e.g. `btc_perp_daily_price_data`, `eth_perp_daily_price_data`
-  - 13 collections (daily only — KuCoin Futures doesn't support weekly candles)
+  - 13 daily + 1 hourly (BTC only). KuCoin Futures doesn't support weekly candles. Perp 1h history limited to ~15 months by exchange.
 - **Funding rate collections:** `{token}_funding_rate_data` (per-token, raw 8h granularity)
   - e.g. `btc_funding_rate_data`, `eth_funding_rate_data` — 13 collections
 - Each document is keyed by `timestamp` (UTC datetime); unique index enforced
 - `indicator_glossary` collection: indicator descriptions, categories, ranges, schema_hash. Auto-synced on every pipeline run.
 - `funding_rate_glossary` collection: per-token metadata (exchange, contract symbol, settlement schedule)
-- **Production timeframes:** Daily + weekly only. 1h/4h dropped (all strategies daily-only). Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
+- **Production timeframes:** Daily + weekly (all 13 tokens), hourly (BTC only, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
@@ -155,7 +155,10 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
   - Step 1: `python update.py --all --timeframe 1d` (spot daily)
   - Step 2: `python update.py --all --timeframe 1d --market-type perp` (perp daily)
   - Step 3: `python update.py --all --timeframe 1w` (spot weekly)
-- **Daily + weekly production:** 1h and 4h workflows removed (all strategies are daily-only; data dropped to fit 512 MB Atlas free tier). Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
+- `.github/workflows/update-hourly.yml` — cron `5 * * * *` runs BTC-only hourly:
+  - Step 1: `python update.py --symbol BTC-USDT --timeframe 1h` (spot)
+  - Step 2: `python update.py --symbol BTC-USDT --timeframe 1h --market-type perp` (perp)
+- **Production timeframes:** Daily + weekly (all 13 tokens), hourly (BTC only, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
 - Secret required in GitHub Actions: `MONGODB_URI`
 
 ## Environment Variables
