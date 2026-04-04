@@ -1,9 +1,10 @@
 name: Hourly BTC Price Update (Spot + Perp)
 
 on:
-  schedule:
-    - cron: "5 * * * *"
   workflow_dispatch:
+  # Schedule disabled — now runs via local launchd on Mac Mini (com.eeva.tracker-hourly)
+  # Was: cron: "5 * * * *"
+  # Manual fallback: trigger from GitHub UI. Writes to Atlas (MONGODB_URI secret).
 
 jobs:
   update-hourly:

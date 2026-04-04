@@ -1,9 +1,10 @@
 name: Daily Price Update (All Tokens)
 
 on:
-  schedule:
-    - cron: "5 1 * * *"
   workflow_dispatch:
+  # Schedule disabled — now runs via local launchd on Mac Mini (com.eeva.tracker-daily)
+  # Was: cron: "5 1 * * *"
+  # Manual fallback: trigger from GitHub UI. Writes to Atlas (MONGODB_URI secret).
 
 jobs:
   update-daily:

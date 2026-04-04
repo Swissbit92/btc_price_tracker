@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "crypto-tracker": {
-      "command": "Scripts/python.exe",
+      "command": "venv/bin/python",
       "args": ["mcp_server.py"]
     }
   }

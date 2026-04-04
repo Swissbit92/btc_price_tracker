@@ -82,8 +82,8 @@ class TestPerpSymbolMap:
     def test_sol_mapping(self):
         assert PERP_SYMBOL_MAP["SOL-USDT"] == "SOL/USDT:USDT"
 
-    def test_all_13_tokens_present(self):
-        assert len(PERP_SYMBOL_MAP) == 13
+    def test_all_tokens_present(self):
+        assert len(PERP_SYMBOL_MAP) == len(TOKENS)
         for token in TOKENS:
             assert token in PERP_SYMBOL_MAP, f"{token} missing from PERP_SYMBOL_MAP"
 

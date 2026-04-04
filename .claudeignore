@@ -1,0 +1,24 @@
+# Virtual environment (276 MB)
+venv/
+
+# Exported data dumps (1.1 GB total CSVs)
+# Claude reads schema from code, not raw data
+data/
+
+# Root-level seed CSV
+daily_history.csv
+
+# Python bytecode and caches
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Runtime logs
+logs/
+
+# Project banner image (2 MB PNG)
+title_image/
+
+# Secrets
+.env
