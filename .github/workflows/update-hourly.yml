@@ -1,4 +1,4 @@
-name: Hourly BTC Price Update (Spot + Perp)
+name: Hourly Price Update — Manual Fallback (BTC only, writes to Atlas)
 
 on:
   workflow_dispatch:

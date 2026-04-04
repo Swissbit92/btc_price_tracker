@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-run_hourly.py — Hourly BTC data pipeline launcher (replaces btc-hourly.sh for launchd).
+run_hourly.py — Hourly data pipeline launcher (all 18 tokens).
 
-Runs: BTC spot 1h + BTC perp 1h
+Runs: spot 1h + perp 1h for all tokens
 Schedule: every hour at :05 via com.eeva.tracker-hourly launchd plist
 """
 
@@ -48,7 +48,7 @@ def notify_failure(detail):
         f"\U0001f6a8 Price Tracker Alert \U0001f6a8\n\n"
         f"\u23f0 {ts}\n"
         f"\U0001f5a5 {HOSTNAME}\n\n"
-        f"\u274c Pipeline: Hourly Update (BTC)\n"
+        f"\u274c Pipeline: Hourly Update (18 tokens)\n"
         f"\u26a0\ufe0f Status: FAILED\n\n"
         f"{detail}\n\n"
         f"\U0001f527 Check logs for details\n"
@@ -94,8 +94,8 @@ def wait_for_mongo(timeout=30):
 # ── Pipeline steps ──────────────────────────────────────────
 
 STEPS = [
-    ("BTC spot 1h",  [VENV_PYTHON, "update.py", "--symbol", "BTC-USDT", "--timeframe", "1h"]),
-    ("BTC perp 1h",  [VENV_PYTHON, "update.py", "--symbol", "BTC-USDT", "--timeframe", "1h", "--market-type", "perp"]),
+    ("Spot 1h (18 tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h"]),
+    ("Perp 1h (18 tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h", "--market-type", "perp"]),
 ]
 
 
@@ -108,7 +108,7 @@ def main():
 
     with open(LOG_FILE, "a") as log:
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        log.write(f"\n=== BTC 1h — {ts} ===\n")
+        log.write(f"\n=== Hourly 1h (18 tokens) — {ts} ===\n")
         log.flush()
 
         for name, cmd in STEPS:
@@ -122,7 +122,7 @@ def main():
         except Exception:
             tail = "(no log)"
         notify_failure(
-            f"\U0001fa99 Token: BTC-USDT\n"
+            f"\U0001fa99 Tokens: 18 (spot + perp 1h)\n"
             f"\u274c Failed: {', '.join(failed)}\n\n"
             f"<pre>{tail[:1000]}</pre>"
         )

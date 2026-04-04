@@ -412,7 +412,7 @@ python update.py --all --test
 
 **Phase G: COMPLETE** (2026-03-22) — Perpetual futures data pipeline. 13 perp daily + 13 funding rate collections live. See [docs/PERPETUAL_FUTURES.md](PERPETUAL_FUTURES.md).
 **Phase H: COMPLETE** (2026-03-22) — Storage optimization. Dropped 1h+4h collections (27 total, ~200 MB freed). Daily-only production. Hourly/4h GitHub Actions workflows deleted.
-**Phase I: COMPLETE** (2026-03-27) — Restored BTC-only 1h data (spot + perp) for external project consumption. Backfilled spot 1h from Jan 2020 (~54K docs), perp 1h from Dec 2024 (~11K docs, KuCoin Futures 1h history limit). New hourly workflow (`update-hourly.yml`) runs BTC-only. All other tokens remain daily+weekly only.
+**Phase I: COMPLETE** (2026-03-27) — Restored BTC-only 1h data (spot + perp) for external project consumption. Backfilled spot 1h from Jan 2020 (~54K docs), perp 1h from Dec 2024 (~11K docs, KuCoin Futures 1h history limit). New hourly workflow (`update-hourly.yml`) initially BTC-only; expanded to all 18 tokens in Phase J.
 **Phase J: COMPLETE** (2026-04-04) — Mac Mini M4 Pro migration. Python 3.12, 18 tokens (added PEPE/WIF/SHIB/WLD/ARB), local Docker MongoDB, launchd automation (daily 01:05 + hourly :05) via Python launchers (no bash/FDA needed), Telegram alerts with photo + emoji, CSV backup (1.0 GB), GH Actions cron disabled (manual fallback kept). 100 collections, 53/53 tests pass.
 
 ### Notes
@@ -457,7 +457,7 @@ python update.py --all --test
 
 ### J5. Pipeline scripts
 - [x] Created `bin/run_daily.py` — Python launcher: 4 steps (spot + perp + weekly + CSV), Telegram GREEN/RED with photo support
-- [x] Created `bin/run_hourly.py` — Python launcher: BTC 1h (spot + perp), Telegram RED on failure only
+- [x] Created `bin/run_hourly.py` — Python launcher: all 18 tokens 1h (spot + perp), Telegram RED on failure only
 - [x] Created `bin/btc-daily.sh` / `bin/btc-hourly.sh` — bash wrappers for manual terminal runs
 - [x] Created `bin/notify.sh` — shared Telegram helper for bash wrappers
 
@@ -477,5 +477,14 @@ python update.py --all --test
 - [x] Failure path: Telegram RED alert with error details
 - [x] 53/53 tests pass (no regression from baseline)
 - [x] 100 MongoDB collections, all 18 tokens fresh
+
+### J9. Hourly expansion (BTC-only → all 18 tokens)
+- [x] Seeded 1h spot + perp for 5 new tokens (PEPE, WIF, SHIB, WLD, ARB)
+- [x] Updated all 18 tokens to current (filled 7-day gap for original 13)
+- [x] Changed `run_hourly.py` from `--symbol BTC-USDT` to `--all`
+- [x] Updated `btc-hourly.sh` to match
+- [x] MongoDB: 110 collections, 839K docs, 725 MB on disk
+- [x] CSV: 110 files, 1.1 GB
+- [x] Added `images/PriceTracker_01.png` header image for Telegram notifications
 
 ### Phase J: COMPLETE (2026-04-04)

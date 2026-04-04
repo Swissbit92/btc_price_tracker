@@ -183,7 +183,7 @@ TIMEFRAME_GLOSSARY = {
     "1h": {
         "name": "Hourly",
         "interval": "1 hour",
-        "description": "One candle per hour. BTC only (spot + perp) in production.",
+        "description": "One candle per hour. All 18 tokens (spot + perp) in production.",
         "production": True,
         "market_types": ["spot", "perp"],
     },

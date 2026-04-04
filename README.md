@@ -12,7 +12,7 @@ The **Crypto Price Tracker** is a fully automated data pipeline that fetches dai
 - **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for spot daily, Jan 2020 for perp daily) for strategy backtesting.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
-- **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:05 UTC + hourly BTC). GitHub Actions `workflow_dispatch` kept as manual fallback.
+- **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:05 UTC + hourly all 18 tokens). GitHub Actions `workflow_dispatch` kept as manual fallback.
 - **Telegram Alerts**: Daily GREEN confirmation on success, RED alert on failure.
 - **CSV Backup**: Daily export of all collections to `data/` (Time Machine backed up).
 
@@ -131,8 +131,8 @@ Create a `.env` file in the project root:
 - **🗄️ Database**
   - Local Docker MongoDB 7 (`localhost:27017`)
   - Database: `btc_data` (~100 collections)
-  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data` (18 daily + 18 weekly + BTC 1h)
-  - Perp collections: `{token}_perp_daily_price_data` (18 collections + BTC perp 1h)
+  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data`, `{token}_1h_price_data` (18 daily + 18 weekly + 18 hourly)
+  - Perp collections: `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data` (18 daily + 18 hourly)
   - Funding rate collections: `{token}_funding_rate_data` (18 collections, raw 8h granularity)
   - Glossary: `indicator_glossary`, `funding_rate_glossary`, `token_metadata`
 
@@ -151,7 +151,7 @@ Create a `.env` file in the project root:
     - spot daily → perp daily → spot weekly → CSV backup
     - Telegram GREEN on success, RED on failure
   - **`com.eeva.tracker-hourly`**: every hour at :05 via `bin/run_hourly.py`
-    - BTC spot 1h + BTC perp 1h, Telegram RED on failure only
+    - All 18 tokens spot 1h + perp 1h, Telegram RED on failure only
   - **Fallback**: GitHub Actions `workflow_dispatch` (manual trigger, writes to Atlas)
   - **Logs**: Date-stamped in `logs/` (daily 30-day retention, hourly 14-day)
 
