@@ -147,10 +147,10 @@ Create a `.env` file in the project root:
   - Dependencies: `ccxt` (pinned 4.5.40), `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
 - **🔄 Automation (launchd on Mac Mini M4 Pro)**
-  - **`com.eeva.tracker-daily`**: 01:05 UTC daily via `bin/btc-daily.sh`
+  - **`com.eeva.tracker-daily`**: 01:05 UTC daily via `bin/run_daily.py`
     - spot daily → perp daily → spot weekly → CSV backup
     - Telegram GREEN on success, RED on failure
-  - **`com.eeva.tracker-hourly`**: every hour at :05 via `bin/btc-hourly.sh`
+  - **`com.eeva.tracker-hourly`**: every hour at :05 via `bin/run_hourly.py`
     - BTC spot 1h + BTC perp 1h, Telegram RED on failure only
   - **Fallback**: GitHub Actions `workflow_dispatch` (manual trigger, writes to Atlas)
   - **Logs**: Date-stamped in `logs/` (daily 30-day retention, hourly 14-day)

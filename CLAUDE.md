@@ -144,13 +144,13 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 
 ### Automation (launchd on Mac Mini M4 Pro)
 
-- **`com.eeva.tracker-daily`** — daily at 01:05 UTC via `bin/btc-daily.sh`:
+- **`com.eeva.tracker-daily`** — daily at 01:05 UTC via `bin/run_daily.py`:
   - Step 1: `update.py --all --timeframe 1d` (spot daily, 18 tokens)
   - Step 2: `update.py --all --timeframe 1d --market-type perp` (perp daily + funding rates)
   - Step 3: `update.py --all --timeframe 1w` (spot weekly)
   - Step 4: `export_data.py` (CSV backup to `data/`)
-  - Telegram GREEN on success, RED on failure
-- **`com.eeva.tracker-hourly`** — every hour at :05 via `bin/btc-hourly.sh`:
+  - Telegram GREEN on success (with header image), RED on failure
+- **`com.eeva.tracker-hourly`** — every hour at :05 via `bin/run_hourly.py`:
   - Step 1: `update.py --symbol BTC-USDT --timeframe 1h` (spot)
   - Step 2: `update.py --symbol BTC-USDT --timeframe 1h --market-type perp` (perp)
   - Telegram RED on failure only (no success notification)
@@ -158,13 +158,17 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual trigger only, writes to Atlas)
 - **Logs:** Date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day)
 
-### Wrapper Scripts (`bin/`)
+### Pipeline Launchers (`bin/`)
 
 | Script | Purpose |
 |--------|---------|
-| `bin/notify.sh` | Shared Telegram notification helper (notify_success, notify_failure) |
-| `bin/btc-daily.sh` | Daily wrapper: spot + perp + weekly + CSV export + Telegram |
-| `bin/btc-hourly.sh` | Hourly wrapper: BTC 1h spot + perp, Telegram on failure only |
+| `bin/run_daily.py` | Daily launcher: spot + perp + weekly + CSV export + Telegram (called by launchd) |
+| `bin/run_hourly.py` | Hourly launcher: BTC 1h spot + perp, Telegram on failure only (called by launchd) |
+| `bin/btc-daily.sh` | Bash wrapper (for manual runs from terminal) |
+| `bin/btc-hourly.sh` | Bash wrapper (for manual runs from terminal) |
+| `bin/notify.sh` | Shared Telegram helper for bash wrappers |
+
+**Note:** launchd plists call the Python launchers directly (not bash) to avoid macOS TCC/Full Disk Access issues. Same pattern as CRA's `com.eeva.monthly-review`.
 
 ### CSV Backup (`export_data.py`)
 
