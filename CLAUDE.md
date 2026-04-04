@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in local Docker MongoDB. Supports both **spot** and **perpetual futures** market types. Runs autonomously via **launchd on Mac Mini M4 Pro** (daily at 01:05 UTC + hourly BTC). GitHub Actions `workflow_dispatch` kept as manual fallback.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in local Docker MongoDB. Supports both **spot** and **perpetual futures** market types. Runs autonomously via **launchd on Mac Mini M4 Pro** (daily at 01:05 UTC + hourly all 18 tokens). GitHub Actions `workflow_dispatch` kept as manual fallback.
 
 ## Commands
 
@@ -105,17 +105,17 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 - Database: `btc_data` (production), `btc_data_test` (testing)
 - **Spot collections:** `{token}_daily_price_data`, `{token}_weekly_price_data`, plus `btc_1h_price_data`
   - e.g. `btc_daily_price_data`, `eth_weekly_price_data`
-  - 18 daily + 18 weekly + 1 hourly (BTC only). Newer tokens (SUI/TON/WIF) have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history.
-- **Perp collections:** `{token}_perp_daily_price_data`, plus `btc_perp_1h_price_data`
+  - 18 daily + 18 weekly + 18 hourly. Newer tokens (SUI/TON/WIF) have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history.
+- **Perp collections:** `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data`
   - e.g. `btc_perp_daily_price_data`, `eth_perp_daily_price_data`
-  - 18 daily + 1 hourly (BTC only). KuCoin Futures doesn't support weekly candles. Perp 1h history limited to ~15 months by exchange.
+  - 18 daily + 18 hourly. KuCoin Futures doesn't support weekly candles. Perp 1h history limited to ~15 months by exchange.
 - **Funding rate collections:** `{token}_funding_rate_data` (per-token, raw 8h granularity)
   - e.g. `btc_funding_rate_data`, `eth_funding_rate_data` — 18 collections
 - Each document is keyed by `timestamp` (UTC datetime); unique index enforced
 - `indicator_glossary` collection: indicator descriptions, categories, ranges, schema_hash. Auto-synced on every pipeline run.
 - `funding_rate_glossary` collection: per-token metadata (exchange, contract symbol, settlement schedule)
-- **Production timeframes:** Daily + weekly (all 18 tokens), hourly (BTC only, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
-- **Total collections:** ~100 (18 spot daily + 18 weekly + 18 perp daily + 18 funding + BTC 1h spot + BTC 1h perp + 3 metadata + misc)
+- **Production timeframes:** Daily + weekly + hourly (all 18 tokens, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
+- **Total collections:** ~110 (18 spot daily + 18 weekly + 18 spot 1h + 18 perp daily + 18 perp 1h + 18 funding + 2 metadata)
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
@@ -151,10 +151,10 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
   - Step 4: `export_data.py` (CSV backup to `data/`)
   - Telegram GREEN on success (with header image), RED on failure
 - **`com.eeva.tracker-hourly`** — every hour at :05 via `bin/run_hourly.py`:
-  - Step 1: `update.py --symbol BTC-USDT --timeframe 1h` (spot)
-  - Step 2: `update.py --symbol BTC-USDT --timeframe 1h --market-type perp` (perp)
+  - Step 1: `update.py --all --timeframe 1h` (spot, 18 tokens)
+  - Step 2: `update.py --all --timeframe 1h --market-type perp` (perp, 18 tokens)
   - Telegram RED on failure only (no success notification)
-- **Production timeframes:** Daily + weekly (all 18 tokens), hourly (BTC only, spot + perp). 4h not in production.
+- **Production timeframes:** Daily + weekly + hourly (all 18 tokens, spot + perp). 4h not in production.
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual trigger only, writes to Atlas)
 - **Logs:** Date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day)
 
@@ -163,7 +163,7 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 | Script | Purpose |
 |--------|---------|
 | `bin/run_daily.py` | Daily launcher: spot + perp + weekly + CSV export + Telegram (called by launchd) |
-| `bin/run_hourly.py` | Hourly launcher: BTC 1h spot + perp, Telegram on failure only (called by launchd) |
+| `bin/run_hourly.py` | Hourly launcher: all 18 tokens 1h spot + perp, Telegram on failure only (called by launchd) |
 | `bin/btc-daily.sh` | Bash wrapper (for manual runs from terminal) |
 | `bin/btc-hourly.sh` | Bash wrapper (for manual runs from terminal) |
 | `bin/notify.sh` | Shared Telegram helper for bash wrappers |
