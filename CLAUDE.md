@@ -123,11 +123,11 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 |---|---|
 | `config.py` | Central config: TOKENS (18), TIMEFRAMES (4: 1h, 4h, 1d, 1w), MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping (`market_type` param) |
 | `db.py` | MongoDB connection + CRUD: all functions accept `market_type="spot"` param. Funding CRUD: load_funding_rates, bulk_upsert_funding, ensure_funding_indexes, upsert_funding_metadata |
-| `extract.py` | CCXT-based KuCoin **spot** data fetching: fetch_candles, fetch_seed_candles |
+| `extract.py` | CCXT-based KuCoin **spot** data fetching: fetch_candles (with 429 retry/backoff), fetch_seed_candles |
 | `extract_perp.py` | CCXT-based KuCoin **Futures** data fetching via `ccxt.kucoinfutures`: fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history |
 | `indicators.py` | Single source of truth for ~85 indicators + ML features: compute_all(), get_numeric_cols(), INDICATOR_GLOSSARY |
 | `sentiment.py` | Fear & Greed Index fetcher: fetch_fear_greed() with graceful fallback |
-| `pipeline.py` | Orchestration: spot (run_seed, run_update, run_backfill + _all) and perp (run_perp_seed, run_perp_update, run_perp_backfill + _all). Raw funding rates stored separately |
+| `pipeline.py` | Orchestration: spot (run_seed, run_update, run_backfill + _all) and perp (run_perp_seed, run_perp_update, run_perp_backfill + _all). All `_all` functions have per-token error isolation. Raw funding rates stored separately |
 | `query.py` | Debug utility: parameterized by symbol, timeframe, test flag, with --compare and --glossary modes |
 
 ### Technical Indicators (~85 numeric + 1 string column)
@@ -196,7 +196,7 @@ Note: CCXT uses KuCoin public endpoints only (no API key required).
 - Fibonacci column names use underscores not dots: `Fib_236`, `Fib_382`, `Fib_500`, `Fib_618`, `Fib_100` (MongoDB rejects dots in field names).
 - StochRSI values are normalized to [0, 1] range (not [0, 100]).
 - `ccxt` is pinned to `4.5.40` in `requirements.txt` (v4.5.41 has a packaging bug). Bump the pin when a fixed release is available.
-- CCXT handles KuCoin rate limiting automatically (`enableRateLimit: True`).
+- CCXT handles KuCoin rate limiting automatically (`enableRateLimit: True`). Additionally, `fetch_candles()` in `extract.py` retries up to 3 times with exponential backoff on 429 errors (CCXT misclassifies KuCoin's `429000` as `ExchangeError`, not `RateLimitExceeded`).
 - Python version: 3.12 locally (venv). CI uses 3.11 (GH Actions fallback).
 - Fear & Greed API is free, no signup: `https://api.alternative.me/fng/`. Graceful fallback if unreachable.
 - VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily and weekly.

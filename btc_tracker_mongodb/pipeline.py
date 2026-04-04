@@ -218,7 +218,10 @@ def run_update_all(timeframe: str = None, test: bool = False):
     timeframes = [timeframe] if timeframe else list(TIMEFRAMES.keys())
     for sym in TOKENS:
         for tf in timeframes:
-            run_update(sym, tf, test)
+            try:
+                run_update(sym, tf, test)
+            except Exception as e:
+                print(f"[update] ERROR: {sym} {tf} failed: {e}")
 
 
 def run_seed_all(timeframe: str = None, test: bool = False, count: int = SEED_WINDOW):
@@ -226,7 +229,10 @@ def run_seed_all(timeframe: str = None, test: bool = False, count: int = SEED_WI
     timeframes = [timeframe] if timeframe else list(TIMEFRAMES.keys())
     for sym in TOKENS:
         for tf in timeframes:
-            run_seed(sym, tf, test, count)
+            try:
+                run_seed(sym, tf, test, count)
+            except Exception as e:
+                print(f"[seed] ERROR: {sym} {tf} failed: {e}")
 
 
 def run_backfill(

@@ -414,6 +414,7 @@ python update.py --all --test
 **Phase H: COMPLETE** (2026-03-22) — Storage optimization. Dropped 1h+4h collections (27 total, ~200 MB freed). Daily-only production. Hourly/4h GitHub Actions workflows deleted.
 **Phase I: COMPLETE** (2026-03-27) — Restored BTC-only 1h data (spot + perp) for external project consumption. Backfilled spot 1h from Jan 2020 (~54K docs), perp 1h from Dec 2024 (~11K docs, KuCoin Futures 1h history limit). New hourly workflow (`update-hourly.yml`) initially BTC-only; expanded to all 18 tokens in Phase J.
 **Phase J: COMPLETE** (2026-04-04) — Mac Mini M4 Pro migration. Python 3.12, 18 tokens (added PEPE/WIF/SHIB/WLD/ARB), local Docker MongoDB, launchd automation (daily 01:05 + hourly :05) via Python launchers (no bash/FDA needed), Telegram alerts with photo + emoji, CSV backup (1.0 GB), GH Actions cron disabled (manual fallback kept). 100 collections, 53/53 tests pass.
+**Phase K: COMPLETE** (2026-04-05) — Pipeline resilience fix. Added per-token error isolation to `run_update_all` and `run_seed_all` (matching existing `run_perp_update_all` pattern). Added 429 retry with exponential backoff in `extract.py`. Triggered by KuCoin 429 on DOT-USDT crashing the entire spot 1h run (2026-04-04 21:05 UTC).
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).
@@ -488,3 +489,27 @@ python update.py --all --test
 - [x] Added `images/PriceTracker_01.png` header image for Telegram notifications
 
 ### Phase J: COMPLETE (2026-04-04)
+
+---
+
+## Phase K: Pipeline Resilience Fix (2026-04-05)
+
+> **Goal:** Ensure a single token's transient API error never takes down the entire spot pipeline.
+
+### Incident
+
+On 2026-04-04 21:05 UTC, the hourly spot 1h run crashed on DOT-USDT (token #12 of 18) due to KuCoin HTTP 429 (system-level rate limit). Tokens 13-18 (NEAR, PEPE, WIF, SHIB, WLD, ARB) never ran. Perp 1h succeeded because `run_perp_update_all` already had per-token `try/except`. Data self-healed at 22:05 (2 candles upserted per missed token).
+
+### Root Cause
+
+1. `run_update_all` and `run_seed_all` had no per-token exception isolation (bare loop)
+2. CCXT misclassifies KuCoin's `429000` as `ExchangeError` (not `RateLimitExceeded`), so built-in retry doesn't trigger
+3. KuCoin spot API has aggressive system-level rate limits (~45ms between requests)
+
+### Changes
+
+- [x] `pipeline.py`: Added `try/except` to `run_update_all` — matches `run_perp_update_all` pattern
+- [x] `pipeline.py`: Added `try/except` to `run_seed_all` — same vulnerability
+- [x] `extract.py`: Added 3-attempt retry with exponential backoff (1s, 2s) for 429 errors in `fetch_candles`
+
+### Phase K: COMPLETE (2026-04-05)

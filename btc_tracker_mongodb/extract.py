@@ -4,6 +4,7 @@ extract.py — Fetch OHLCV candles from KuCoin via CCXT.
 
 import time
 import ccxt
+from ccxt.base.errors import ExchangeError
 import pandas as pd
 from datetime import datetime, timezone
 
@@ -57,7 +58,15 @@ def fetch_candles(
 
     while remaining > 0:
         batch_size = min(remaining, 500)  # KuCoin max per request
-        ohlcv = ex.fetch_ohlcv(ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size)
+        for attempt in range(3):
+            try:
+                ohlcv = ex.fetch_ohlcv(ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size)
+                break
+            except ExchangeError as e:
+                if "429" in str(e) and attempt < 2:
+                    time.sleep(2 ** attempt)  # 1s, 2s backoff
+                    continue
+                raise
         if not ohlcv:
             break
         for row in ohlcv:

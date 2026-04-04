@@ -140,7 +140,7 @@ Create a `.env` file in the project root:
   - `seed.py` — initial backfill (500+ candles per token/timeframe, `--market-type perp` for futures)
   - `backfill.py` — deep historical backfill (max available KuCoin history)
   - `update.py` — incremental updates with gap detection
-  - `btc_tracker_mongodb/extract.py` — spot OHLCV fetching via `ccxt.kucoin`
+  - `btc_tracker_mongodb/extract.py` — spot OHLCV fetching via `ccxt.kucoin` (with 429 retry/backoff)
   - `btc_tracker_mongodb/extract_perp.py` — perp OHLCV + funding rate fetching via `ccxt.kucoinfutures`
   - `btc_tracker_mongodb/indicators.py` — 85 indicators + ML features, single source of truth ([glossary](docs/INDICATORS.md))
   - `mcp_server.py` — read-only MCP server for Claude Code integration (7 tools)
