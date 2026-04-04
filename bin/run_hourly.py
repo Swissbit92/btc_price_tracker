@@ -122,7 +122,7 @@ def main():
         except Exception:
             tail = "(no log)"
         notify_failure(
-            f"\U0001fa99 Token: BTC-USDT\n"
+            f"\U0001fa99 Tokens: 18 (spot + perp 1h)\n"
             f"\u274c Failed: {', '.join(failed)}\n\n"
             f"<pre>{tail[:1000]}</pre>"
         )
