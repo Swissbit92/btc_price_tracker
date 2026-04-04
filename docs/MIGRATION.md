@@ -413,6 +413,7 @@ python update.py --all --test
 **Phase G: COMPLETE** (2026-03-22) — Perpetual futures data pipeline. 13 perp daily + 13 funding rate collections live. See [docs/PERPETUAL_FUTURES.md](PERPETUAL_FUTURES.md).
 **Phase H: COMPLETE** (2026-03-22) — Storage optimization. Dropped 1h+4h collections (27 total, ~200 MB freed). Daily-only production. Hourly/4h GitHub Actions workflows deleted.
 **Phase I: COMPLETE** (2026-03-27) — Restored BTC-only 1h data (spot + perp) for external project consumption. Backfilled spot 1h from Jan 2020 (~54K docs), perp 1h from Dec 2024 (~11K docs, KuCoin Futures 1h history limit). New hourly workflow (`update-hourly.yml`) runs BTC-only. All other tokens remain daily+weekly only.
+**Phase J: COMPLETE** (2026-04-04) — Mac Mini M4 Pro migration. Python 3.12, 18 tokens (added PEPE/WIF/SHIB/WLD/ARB), local Docker MongoDB, launchd automation (daily 01:05 + hourly :05), Telegram alerts, CSV backup (1.0 GB), GH Actions cron disabled (manual fallback kept). 100 collections, 53/53 tests pass.
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).
@@ -423,3 +424,57 @@ python update.py --all --test
 - Ichimoku A/B have small library-level differences (Senkou span shift handling). Both computations are valid.
 - Fear & Greed API: free, no signup, daily resolution. Same value merged into all candles per pipeline run.
 - `compute_all()` now takes `timeframe` parameter for VWAP calculation mode.
+
+---
+
+## Phase J: Mac Mini M4 Pro Migration (2026-04-04)
+
+> **Goal:** Migrate from GitHub Actions + MongoDB Atlas to local launchd + Docker MongoDB on Mac Mini M4 Pro. Add 5 tokens, Telegram alerts, and CSV backup.
+
+### J1. Environment setup
+- [x] Deleted Windows `pyvenv.cfg` remnant
+- [x] Created Python 3.12 venv at `venv/` (arm64 native)
+- [x] Updated `.mcp.json` to use `venv/bin/python`
+- [x] Updated `.gitignore` (added `venv/`, `logs/`, `data/`)
+- [x] Updated `requirements.txt` (`pymongo[srv]` → `pymongo`, added `pytest`)
+- [x] Created `.env` with local MongoDB URI + Telegram credentials
+
+### J2. Token expansion (13 → 18)
+- [x] Added PEPE, WIF, SHIB, WLD, ARB to `config.py` (TOKENS + TOKEN_METADATA)
+- [x] All 5 confirmed on KuCoin (spot + perp + funding)
+- [x] Updated `test_config.py` assertion (was hardcoded `== 13`)
+
+### J3. Data population
+- [x] Seeded all 5 new tokens (spot daily + weekly + perp daily)
+- [x] Deep backfilled all 5 new tokens (spot daily + perp daily + funding rates)
+- [x] Seeded weekly data for original 13 tokens (was missing from CRA import)
+- [x] MongoDB: 66 → 100 collections, all populated with indicators
+
+### J4. CSV backup
+- [x] Created `export_data.py` — exports all collections to `data/` as CSV
+- [x] Structure: `data/spot/`, `data/perp/`, `data/funding/`, `data/metadata/`
+- [x] 100 CSV files, ~831K rows, ~1.0 GB
+
+### J5. Wrapper scripts
+- [x] Created `bin/notify.sh` — shared Telegram helper with photo + emoji support
+- [x] Created `bin/btc-daily.sh` — 4 steps (spot + perp + weekly + CSV), Telegram GREEN/RED
+- [x] Created `bin/btc-hourly.sh` — BTC 1h (spot + perp), Telegram RED on failure only
+
+### J6. launchd automation
+- [x] Created `com.eeva.tracker-daily.plist` (01:05 UTC, StartCalendarInterval)
+- [x] Created `com.eeva.tracker-hourly.plist` (every hour at :05)
+- [x] Both loaded via `launchctl bootstrap`
+- [x] Note: Requires Full Disk Access for `/bin/bash` in System Settings
+
+### J7. GitHub Actions
+- [x] Removed `schedule:` from `update-daily.yml` and `update-hourly.yml`
+- [x] Kept `workflow_dispatch:` as manual fallback (writes to Atlas)
+
+### J8. Verification
+- [x] Daily pipeline: all 4 steps pass, Telegram GREEN received
+- [x] Hourly pipeline: both steps pass, silent on success
+- [x] Failure path: Telegram RED alert with error details
+- [x] 53/53 tests pass (no regression from baseline)
+- [x] 100 MongoDB collections, all 18 tokens fresh
+
+### Phase J: COMPLETE (2026-04-04)
