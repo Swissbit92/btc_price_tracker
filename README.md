@@ -399,14 +399,14 @@ With these practices in place, you’ll have a rock-solid development workflow a
 ## ⚙️ CI/CD Workflow
 
 - **🛠️ GitHub Actions Workflows**
-  - `update-daily.yml`: cron `5 1 * * *` — updates all 13 tokens (spot daily + perp daily + spot weekly)
-  - Triggers: schedule + `workflow_dispatch` (manual)
-  - Secret: `MONGODB_URI`
-  - **Note:** 1h and 4h workflows removed — all strategies are daily-only. Infrastructure supports all timeframes for future re-population.
+  - `update-daily.yml`: manual `workflow_dispatch` only (cron disabled — runs via launchd on Mac Mini)
+  - `update-hourly.yml`: manual `workflow_dispatch` only (cron disabled)
+  - Secret: `MONGODB_URI` (points to Atlas for emergency fallback)
+  - **Note:** Cron schedules disabled since 2026-04-04. Primary automation is launchd on Mac Mini M4 Pro.
 
 - **🔄 Core Steps**
   1. **📥 Checkout** your repo
-  2. **🐍 Setup Python** 3.11
+  2. **🐍 Setup Python** 3.11 (CI) / 3.12 (local)
   3. **📦 Install deps** (`pip install -r requirements.txt`)
   4. **🚀 Run updaters** (spot daily → perp daily → spot weekly)
      ```yaml
@@ -429,7 +429,7 @@ With these practices in place, you’ll have a rock-solid development workflow a
   - Enable GitHub **branch protection** to require green builds before merging.  
   - (Optional) Integrate with Slack or email via GitHub webhooks for failure alerts.  
 
-With this CI/CD pipeline in place, every push or scheduled run will automatically fetch, compute, and upsert candles for all 13 tokens—fully hands-off and production-ready!  
+With this automation in place, launchd on the Mac Mini fetches, computes, and upserts candles for all 18 tokens daily — fully hands-off and production-ready!  
 
 ## ❓ Troubleshooting & FAQs
 
