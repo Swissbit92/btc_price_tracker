@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR** (13 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in MongoDB Atlas. Supports both **spot** and **perpetual futures** market types. Runs autonomously via GitHub Actions (daily cron) or optionally via GCP Cloud Run.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in local Docker MongoDB. Supports both **spot** and **perpetual futures** market types. Runs autonomously via **launchd on Mac Mini M4 Pro** (daily at 01:05 UTC + hourly BTC). GitHub Actions `workflow_dispatch` kept as manual fallback.
 
 ## Commands
 
 ```bash
-# Activate the venv (repo root IS the venv)
-source Scripts/activate          # Git Bash on Windows
-.\Scripts\Activate.ps1           # PowerShell
+# Activate the venv
+source venv/bin/activate         # macOS / Linux
+# source Scripts/activate        # Git Bash on Windows (legacy)
 
 # Install dependencies
 pip install -r requirements.txt
@@ -105,22 +105,23 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 - Database: `btc_data` (production), `btc_data_test` (testing)
 - **Spot collections:** `{token}_daily_price_data`, `{token}_weekly_price_data`, plus `btc_1h_price_data`
   - e.g. `btc_daily_price_data`, `eth_weekly_price_data`
-  - 13 daily + 13 weekly + 1 hourly (BTC only). SUI/TON have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history.
+  - 18 daily + 18 weekly + 1 hourly (BTC only). Newer tokens (SUI/TON/WIF) have partial indicators — SMA_200/EMA_200 null until ~200 weeks of history.
 - **Perp collections:** `{token}_perp_daily_price_data`, plus `btc_perp_1h_price_data`
   - e.g. `btc_perp_daily_price_data`, `eth_perp_daily_price_data`
-  - 13 daily + 1 hourly (BTC only). KuCoin Futures doesn't support weekly candles. Perp 1h history limited to ~15 months by exchange.
+  - 18 daily + 1 hourly (BTC only). KuCoin Futures doesn't support weekly candles. Perp 1h history limited to ~15 months by exchange.
 - **Funding rate collections:** `{token}_funding_rate_data` (per-token, raw 8h granularity)
-  - e.g. `btc_funding_rate_data`, `eth_funding_rate_data` — 13 collections
+  - e.g. `btc_funding_rate_data`, `eth_funding_rate_data` — 18 collections
 - Each document is keyed by `timestamp` (UTC datetime); unique index enforced
 - `indicator_glossary` collection: indicator descriptions, categories, ranges, schema_hash. Auto-synced on every pipeline run.
 - `funding_rate_glossary` collection: per-token metadata (exchange, contract symbol, settlement schedule)
-- **Production timeframes:** Daily + weekly (all 13 tokens), hourly (BTC only, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
+- **Production timeframes:** Daily + weekly (all 18 tokens), hourly (BTC only, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
+- **Total collections:** ~100 (18 spot daily + 18 weekly + 18 perp daily + 18 funding + BTC 1h spot + BTC 1h perp + 3 metadata + misc)
 
 ### Key Modules (`btc_tracker_mongodb/`)
 
 | File | Purpose |
 |---|---|
-| `config.py` | Central config: TOKENS (13), TIMEFRAMES (4: 1h, 4h, 1d, 1w), MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping (`market_type` param) |
+| `config.py` | Central config: TOKENS (18), TIMEFRAMES (4: 1h, 4h, 1d, 1w), MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping (`market_type` param) |
 | `db.py` | MongoDB connection + CRUD: all functions accept `market_type="spot"` param. Funding CRUD: load_funding_rates, bulk_upsert_funding, ensure_funding_indexes, upsert_funding_metadata |
 | `extract.py` | CCXT-based KuCoin **spot** data fetching: fetch_candles, fetch_seed_candles |
 | `extract_perp.py` | CCXT-based KuCoin **Futures** data fetching via `ccxt.kucoinfutures`: fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history |
@@ -131,42 +132,57 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 
 ### Technical Indicators (~85 numeric + 1 string column)
 
-Computed by `indicators.py` using `pandas-ta-classic`:
+Computed by `indicators.py` using `pandas-ta-classic`. Categories: Trend (SMA/EMA/Ichimoku/ADX/Supertrend/PSAR/Aroon), Momentum (RSI/StochRSI/MACD/Williams%R/CCI), Volume (OBV/CMF/MFI), Volatility (BB/Donchian/ATR/Squeeze), Risk (VaR/CVaR/Omega/Ulcer), ML Features (Z-scores/slopes/candle ratios), Sentiment (Fear & Greed).
 
-**Trend:** SMA (50, 100, 200), EMA (20, 50, 100, 200), Ichimoku (9, 26, 52), ADX / +DI / -DI (14), Supertrend (7, 3.0), KAMA (10), HMA (20), PSAR, Aroon (Up/Down/Osc, 25)
-**Momentum:** RSI (14), Stochastic RSI (14, K=3, D=3), Stochastic (K=14, D=3), MACD (12, 26, 9), Williams %R (14), CCI (20), TRIX (18)
-**Volume:** OBV, CMF (20), MFI (14)
-**Volatility:** Bollinger Bands (20, 2sigma), BB Width, Donchian Channel (20), ATR (14), NATR (14), Parkinson Vol (14), Realized Vol (14, 30), Vol Ratio (14/30), Choppiness Index (14), Squeeze Momentum (flag + momentum)
-**Risk:** VaR (5th percentile, 50-period), CVaR (50-period), Omega Ratio (50-period), Tail Ratio (50-period), Ulcer Index (14-period), Kappa Ratio (order 3, 50-period)
-**Price levels:** Fibonacci retracement (rolling 50-period), VWAP (rolling 24-bar for intraday, cumulative for daily)
-**Custom:** HDPR (mean-reversion, SMA_50 reuse, 3% threshold)
-**ML Features:** Z-scores (Close/RSI/Volume, 100-period), Candle body/wick ratios (ATR-normalized), Price vs EMA20/SMA200 (ATR-normalized), RSI slope (3), MACD slope (3)
-**Derived:** Log returns (1, 4, 12, 24 periods), temporal features (hour/dow sin/cos)
-**Sentiment:** Fear & Greed Index (FnG_Value: 0-100 int, FnG_Class: string)
-When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `INDICATOR_GLOSSARY` if adding/removing columns (`get_numeric_cols()` derives from it automatically). Also update the glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md) to keep the human-readable reference in sync.
+> **Full indicator list with parameters:** [`docs/INDICATORS.md`](docs/INDICATORS.md)
+
+When modifying indicators, only edit `indicators.py` — it is the single source of truth. Update `INDICATOR_GLOSSARY` if adding/removing columns (`get_numeric_cols()` derives from it automatically). Also update `docs/INDICATORS.md` to keep the reference in sync.
 
 ### Flask App (`app.py`)
 
 Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by GCP Cloud Run + Cloud Scheduler.
 
-### Automation
+### Automation (launchd on Mac Mini M4 Pro)
 
-- `.github/workflows/update-daily.yml` — cron `5 1 * * *` runs all updates:
-  - Step 1: `python update.py --all --timeframe 1d` (spot daily)
-  - Step 2: `python update.py --all --timeframe 1d --market-type perp` (perp daily)
-  - Step 3: `python update.py --all --timeframe 1w` (spot weekly)
-- `.github/workflows/update-hourly.yml` — cron `5 * * * *` runs BTC-only hourly:
-  - Step 1: `python update.py --symbol BTC-USDT --timeframe 1h` (spot)
-  - Step 2: `python update.py --symbol BTC-USDT --timeframe 1h --market-type perp` (perp)
-- **Production timeframes:** Daily + weekly (all 13 tokens), hourly (BTC only, spot + perp). 4h not in production. Infrastructure supports all timeframes — re-populate via `backfill.py` when needed.
-- Secret required in GitHub Actions: `MONGODB_URI`
+- **`com.eeva.tracker-daily`** — daily at 01:05 UTC via `bin/btc-daily.sh`:
+  - Step 1: `update.py --all --timeframe 1d` (spot daily, 18 tokens)
+  - Step 2: `update.py --all --timeframe 1d --market-type perp` (perp daily + funding rates)
+  - Step 3: `update.py --all --timeframe 1w` (spot weekly)
+  - Step 4: `export_data.py` (CSV backup to `data/`)
+  - Telegram GREEN on success, RED on failure
+- **`com.eeva.tracker-hourly`** — every hour at :05 via `bin/btc-hourly.sh`:
+  - Step 1: `update.py --symbol BTC-USDT --timeframe 1h` (spot)
+  - Step 2: `update.py --symbol BTC-USDT --timeframe 1h --market-type perp` (perp)
+  - Telegram RED on failure only (no success notification)
+- **Production timeframes:** Daily + weekly (all 18 tokens), hourly (BTC only, spot + perp). 4h not in production.
+- **Fallback:** GitHub Actions `workflow_dispatch` (manual trigger only, writes to Atlas)
+- **Logs:** Date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day)
+
+### Wrapper Scripts (`bin/`)
+
+| Script | Purpose |
+|--------|---------|
+| `bin/notify.sh` | Shared Telegram notification helper (notify_success, notify_failure) |
+| `bin/btc-daily.sh` | Daily wrapper: spot + perp + weekly + CSV export + Telegram |
+| `bin/btc-hourly.sh` | Hourly wrapper: BTC 1h spot + perp, Telegram on failure only |
+
+### CSV Backup (`export_data.py`)
+
+Exports all MongoDB collections to `data/` as CSV. Run automatically as Step 4 of daily pipeline.
+```bash
+python export_data.py                    # all tokens
+python export_data.py --tokens BTC,ETH   # specific tokens
+python export_data.py --dry-run          # preview only
+```
 
 ## Environment Variables
 
-Required in `.env` for local development:
-- `MONGODB_URI` — MongoDB Atlas connection string
+Required in `.env`:
+- `MONGODB_URI` — MongoDB connection string (`mongodb://localhost:27017` for local Docker)
+- `TG_BOT_TOKEN` — Telegram bot token for failure/success alerts
+- `TG_CHAT_ID` — Telegram chat ID for notifications
 
-Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env vars (`KUCOIN_API_KEY`, etc.) are no longer needed by the new pipeline.
+Note: CCXT uses KuCoin public endpoints only (no API key required).
 
 ## Important Constraints
 
@@ -177,7 +193,7 @@ Note: CCXT uses KuCoin public endpoints only (no API key required). Legacy env v
 - StochRSI values are normalized to [0, 1] range (not [0, 100]).
 - `ccxt` is pinned to `4.5.40` in `requirements.txt` (v4.5.41 has a packaging bug). Bump the pin when a fixed release is available.
 - CCXT handles KuCoin rate limiting automatically (`enableRateLimit: True`).
-- Python version: 3.11 locally (venv) and in CI.
+- Python version: 3.12 locally (venv). CI uses 3.11 (GH Actions fallback).
 - Fear & Greed API is free, no signup: `https://api.alternative.me/fng/`. Graceful fallback if unreachable.
 - VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily and weekly.
 - `compute_all()` takes a `timeframe` parameter ("1h", "4h", "1d", "1w") that affects VWAP calculation.
