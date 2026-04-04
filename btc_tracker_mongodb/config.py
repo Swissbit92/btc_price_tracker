@@ -4,7 +4,8 @@ config.py — Central configuration for the multi-token price tracker.
 
 TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT",
           "DOGE-USDT", "AVAX-USDT", "LINK-USDT", "ADA-USDT", "SUI-USDT",
-          "TON-USDT", "DOT-USDT", "NEAR-USDT"]
+          "TON-USDT", "DOT-USDT", "NEAR-USDT",
+          "PEPE-USDT", "WIF-USDT", "SHIB-USDT", "WLD-USDT", "ARB-USDT"]
 
 # internal name -> KuCoin API candle type
 TIMEFRAMES = {"1h": "1hour", "4h": "4hour", "1d": "1day", "1w": "1week"}
@@ -120,6 +121,41 @@ TOKEN_METADATA = {
         "name": "NEAR Protocol",
         "exchange": "kucoin",
         "perp_contract": "NEARUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "PEPE-USDT": {
+        "name": "Pepe",
+        "exchange": "kucoin",
+        "perp_contract": "PEPEUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "WIF-USDT": {
+        "name": "dogwifhat",
+        "exchange": "kucoin",
+        "perp_contract": "WIFUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "SHIB-USDT": {
+        "name": "Shiba Inu",
+        "exchange": "kucoin",
+        "perp_contract": "SHIBUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "WLD-USDT": {
+        "name": "Worldcoin",
+        "exchange": "kucoin",
+        "perp_contract": "WLDUSDTM",
+        "market_types": ["spot", "perp", "funding"],
+        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
+    },
+    "ARB-USDT": {
+        "name": "Arbitrum",
+        "exchange": "kucoin",
+        "perp_contract": "ARBUSDTM",
         "market_types": ["spot", "perp", "funding"],
         "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
     },

@@ -3,3 +3,6 @@ lib/
 .env
 /.idea/
 __pycache__/
+venv/
+logs/
+data/

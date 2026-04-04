@@ -1,18 +1,20 @@
-# 🚀 Bitcoin Cloud Price Tracker
+# 🚀 Bitcoin Price Tracker
 
 ![Project Title](title_image/ChatGPT%20Image%20May%204,%202025,%2006_09_14%20PM.png)
 
 ## 🚀 Project Overview
 
-The **Crypto Cloud Price Tracker** is a fully automated, cloud-hosted application that fetches daily and weekly OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, and NEAR** (13 USDT pairs) from KuCoin via CCXT — both **spot** and **perpetual futures** markets — computes 85 technical indicators + ML features, fetches the Fear & Greed Index and funding rates, and stores everything in MongoDB Atlas. Designed for reliability and zero-downtime operation:
+The **Crypto Price Tracker** is a fully automated data pipeline that fetches daily, weekly, and hourly OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT — both **spot** and **perpetual futures** markets — computes 85 technical indicators + ML features, fetches the Fear & Greed Index and funding rates, and stores everything in local Docker MongoDB. Runs on a **Mac Mini M4 Pro** via launchd automation with Telegram alerts. Designed for reliability and zero-downtime operation:
 
-- **Multi-Token, Multi-Market Support**: Tracks 13 tokens across daily + weekly timeframes for spot, plus daily perpetual futures with 8h funding rate history.
+- **Multi-Token, Multi-Market Support**: Tracks 18 tokens across daily + weekly timeframes for spot, plus daily perpetual futures with 8h funding rate history.
 - **Perpetual Futures Pipeline**: Fetches perp OHLCV from KuCoin Futures via `ccxt.kucoinfutures`, stores raw 8h funding rates separately for consumer-side aggregation.
 - **Historical Seeding**: Backfills up to 500+ candles per token/timeframe in one go.
 - **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for spot daily, Jan 2020 for perp daily) for strategy backtesting.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
-- **Serverless Execution**: Runs on GitHub Actions (or optionally on GCP Cloud Run + Scheduler) without the need for a dedicated VM.
+- **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:05 UTC + hourly BTC). GitHub Actions `workflow_dispatch` kept as manual fallback.
+- **Telegram Alerts**: Daily GREEN confirmation on success, RED alert on failure.
+- **CSV Backup**: Daily export of all collections to `data/` (Time Machine backed up).
 
 This project is written in **Python**, leveraging:
 
@@ -22,7 +24,7 @@ This project is written in **Python**, leveraging:
 - `numpy` for numerical computation
 - `mcp` for the read-only MCP server (Claude Code integration)
 
-Whether you’re building trading bots, dashboarding price signals, or exploring analytics, this tracker gives you a robust, extensible foundation — no local host required, zero manual intervention, and all data safely in the cloud.
+Whether you’re building trading bots, dashboarding price signals, or exploring analytics, this tracker gives you a robust, extensible foundation — zero manual intervention, Telegram alerts on every run, and all data backed up locally + CSV.
 
 ## 🔧 Prerequisites
 
@@ -32,14 +34,14 @@ Before you can run the Bitcoin Cloud Price Tracker, make sure you have:
 
 - **KuCoin Account**
   - No API key required — uses public endpoints only (spot + futures).
-- **MongoDB Atlas**
-  - Sign up for the free tier, create a cluster and a database named `btc_data`.
+- **Docker MongoDB** (local)
+  - MongoDB 7 running via Docker on `localhost:27017`, database `btc_data`.
   - Collections are created automatically by the seed scripts (e.g. `btc_daily_price_data`, `btc_perp_daily_price_data`, `btc_funding_rate_data`).
-  - Create a database user with read/write permissions.
+  - Shared with Crypto_Research_Assistant (same `btc_data` database).
 
 ### 2. Local Tools
 
-- **Python ≥ 3.11**
+- **Python ≥ 3.12**
   - Verify with:
     ```bash
     python --version
@@ -52,18 +54,17 @@ Before you can run the Bitcoin Cloud Price Tracker, make sure you have:
 - **Git**  
   - For cloning and version-controlling the repo.  
 
-### 3. GitHub (if using Actions)
+### 3. GitHub (for manual fallback only)
 
-- **Repository**  
-  - Fork or push this project to your GitHub account.  
-- **Secrets** (Settings → Secrets → Actions)
-  - `MONGODB_URI`
+- **Secrets** (Settings → Secrets → Actions): `MONGODB_URI` (points to Atlas for emergency fallback)
 
-### 4. Environment File (if running locally)
+### 4. Environment File
 
 Create a `.env` file in the project root:
     ```dotenv
-    MONGODB_URI="your-atlas-uri"
+    MONGODB_URI=mongodb://localhost:27017
+    TG_BOT_TOKEN=your-telegram-bot-token
+    TG_CHAT_ID=your-telegram-chat-id
 
 ## 🛠️ Installation & Setup
 
@@ -94,7 +95,7 @@ Create a `.env` file in the project root:
     ```
 
 - **🚀 Seed Historical Data**
-  - Seed all 13 tokens with 500 candles each:
+  - Seed all 18 tokens with 500 candles each:
     ```bash
     python seed.py --all
     ```
@@ -115,8 +116,7 @@ Create a `.env` file in the project root:
     ```
 
 - **🔄 Start Updates**
-  - GitHub Actions workflow runs daily updates (spot + perp + weekly) automatically.
-  - Ensure your GitHub **Secret** `MONGODB_URI` is set.
+  - launchd runs daily updates (spot + perp + weekly + CSV backup) at 01:05 UTC automatically.
   - Run manually for testing:
     ```bash
     python update.py --all --timeframe 1d
@@ -126,15 +126,15 @@ Create a `.env` file in the project root:
 ## ☁️ Architecture & Cloud Deployment
 
 - **🌐 Data Source**
-  - KuCoin Public API via CCXT — spot (13 USDT pairs) + KuCoin Futures (13 perp contracts) — no auth required
+  - KuCoin Public API via CCXT — spot (18 USDT pairs) + KuCoin Futures (18 perp contracts) — no auth required
 
-- **🗄️ Cloud Database**
-  - MongoDB Atlas (Free tier M0)
-  - Database: `btc_data`
-  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data` (13 daily + 13 weekly)
-  - Perp collections: `{token}_perp_daily_price_data` (13 collections)
-  - Funding rate collections: `{token}_funding_rate_data` (13 collections, raw 8h granularity)
-  - Glossary: `indicator_glossary`, `funding_rate_glossary`
+- **🗄️ Database**
+  - Local Docker MongoDB 7 (`localhost:27017`)
+  - Database: `btc_data` (~100 collections)
+  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data` (18 daily + 18 weekly + BTC 1h)
+  - Perp collections: `{token}_perp_daily_price_data` (18 collections + BTC perp 1h)
+  - Funding rate collections: `{token}_funding_rate_data` (18 collections, raw 8h granularity)
+  - Glossary: `indicator_glossary`, `funding_rate_glossary`, `token_metadata`
 
 - **🐍 Processing Pipeline**
   - `seed.py` — initial backfill (500+ candles per token/timeframe, `--market-type perp` for futures)
@@ -146,16 +146,18 @@ Create a `.env` file in the project root:
   - `mcp_server.py` — read-only MCP server for Claude Code integration (7 tools)
   - Dependencies: `ccxt` (pinned 4.5.40), `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
-- **🔄 Automation & CI/CD**
-  - **GitHub Actions**
-    - `update-daily.yml`: cron `5 1 * * *` — spot daily + perp daily + spot weekly updates
-    - Python 3.11, deps from `requirements.txt`
-  - **⚙️ (Optional) GCP Cloud Run + Cloud Scheduler**
-    - Containerized service via `Dockerfile`
+- **🔄 Automation (launchd on Mac Mini M4 Pro)**
+  - **`com.eeva.tracker-daily`**: 01:05 UTC daily via `bin/btc-daily.sh`
+    - spot daily → perp daily → spot weekly → CSV backup
+    - Telegram GREEN on success, RED on failure
+  - **`com.eeva.tracker-hourly`**: every hour at :05 via `bin/btc-hourly.sh`
+    - BTC spot 1h + BTC perp 1h, Telegram RED on failure only
+  - **Fallback**: GitHub Actions `workflow_dispatch` (manual trigger, writes to Atlas)
+  - **Logs**: Date-stamped in `logs/` (daily 30-day retention, hourly 14-day)
 
 - **🔒 Secrets Management**
-  - **GitHub Secrets**: `MONGODB_URI` (only secret needed — CCXT uses public endpoints)
-  - **Local .env** for development
+  - **Local `.env`**: `MONGODB_URI`, `TG_BOT_TOKEN`, `TG_CHAT_ID`
+  - **GitHub Secrets**: `MONGODB_URI` (Atlas, for manual fallback only)
 
 - **🤖 MCP Server (Claude Code Integration)**
   - `mcp_server.py` exposes 7 read-only tools for querying MongoDB directly from Claude Code conversations
