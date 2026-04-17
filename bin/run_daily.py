@@ -107,18 +107,36 @@ def notify_failure(detail):
 
 # ── Docker/MongoDB readiness check ─────────────────────────
 
-def wait_for_mongo(timeout=30):
+MONGO_CONTAINER = "crypto_research_assistant-mongo-1"
+
+
+def wait_for_mongo(timeout=90, log=None):
+    def _log(msg):
+        if log is not None:
+            log.write(msg + "\n")
+            log.flush()
+
+    # Pre-flight: make sure the container is started (idempotent — no-op if running)
+    start = subprocess.run(
+        ["docker", "start", MONGO_CONTAINER],
+        capture_output=True, text=True, timeout=15,
+    )
+    if start.returncode != 0:
+        _log(f"[wait_for_mongo] docker start failed: {start.stderr.strip()}")
+
     waited = 0
     while waited < timeout:
         result = subprocess.run(
-            ["docker", "exec", "crypto_research_assistant-mongo-1",
+            ["docker", "exec", MONGO_CONTAINER,
              "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"],
-            capture_output=True, timeout=10,
+            capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
+            _log(f"[wait_for_mongo] mongo ready after {waited}s")
             return True
         time.sleep(2)
         waited += 2
+    _log(f"[wait_for_mongo] FAILED after {timeout}s — last stderr: {result.stderr.strip()[:200]}")
     return False
 
 
@@ -133,16 +151,21 @@ STEPS = [
 
 
 def main():
-    # Check MongoDB
-    if not wait_for_mongo():
-        notify_failure("\U0001f5c4 MongoDB not reachable after 30s\n\U0001f527 Is Docker running?")
-        sys.exit(1)
-
     started = time.time()
     failed = []
     steps_passed = 0
 
     with open(LOG_FILE, "a") as log:
+        run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        log.write(f"\n===== Daily run started {run_ts} UTC =====\n")
+        log.flush()
+
+        if not wait_for_mongo(log=log):
+            log.write("ABORT: MongoDB not reachable\n")
+            log.flush()
+            notify_failure("\U0001f5c4 MongoDB not reachable after 90s\n\U0001f527 Is Docker running?")
+            sys.exit(1)
+
         for i, (name, cmd) in enumerate(STEPS, 1):
             ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
             log.write(f"\n=== Step {i}: {name} — {ts} ===\n")

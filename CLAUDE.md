@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in local Docker MongoDB. Supports both **spot** and **perpetual futures** market types. Runs autonomously via **launchd on Mac Mini M4 Pro** (daily at 01:05 UTC + hourly all 18 tokens). GitHub Actions `workflow_dispatch` kept as manual fallback.
+Multi-token Crypto Price Tracker — fetches OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT, computes ~85 technical indicators + ML features, fetches the Fear & Greed Index, and stores results in local Docker MongoDB. Supports both **spot** and **perpetual futures** market types. Runs autonomously via **launchd on Mac Mini M4 Pro** (daily at 01:10 local + hourly at :05 local + watchdog at 07:00 local). GitHub Actions `workflow_dispatch` kept as manual fallback.
 
 ## Commands
 
@@ -144,19 +144,32 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 
 ### Automation (launchd on Mac Mini M4 Pro)
 
-- **`com.eeva.tracker-daily`** — daily at 01:05 UTC via `bin/run_daily.py`:
+All times below are **local (Europe/Zurich)** — `StartCalendarInterval` in launchd plists always fires in the machine's local timezone, not UTC.
+
+- **`com.eeva.tracker-daily`** — daily at 01:10 local via `bin/run_daily.py`:
   - Step 1: `update.py --all --timeframe 1d` (spot daily, 18 tokens)
   - Step 2: `update.py --all --timeframe 1d --market-type perp` (perp daily + funding rates)
   - Step 3: `update.py --all --timeframe 1w` (spot weekly)
   - Step 4: `export_data.py` (CSV backup to `data/`)
   - Telegram GREEN on success (with header image), RED on failure
-- **`com.eeva.tracker-hourly`** — every hour at :05 via `bin/run_hourly.py`:
+  - Fire time offset from `:05` to `:10` to avoid colliding with hourly's `wait_for_mongo()` check on the same Docker container.
+- **`com.eeva.tracker-hourly`** — every hour at :05 local via `bin/run_hourly.py`:
   - Step 1: `update.py --all --timeframe 1h` (spot, 18 tokens)
   - Step 2: `update.py --all --timeframe 1h --market-type perp` (perp, 18 tokens)
   - Telegram RED on failure only (no success notification)
+- **`com.eeva.tracker-watchdog`** — daily at 07:00 local via `bin/run_watchdog.py`:
+  - Independent freshness check: queries `max(timestamp)` on 72 collections (18 tokens × {1d, 1h} × {spot, perp}).
+  - Thresholds: 36h for daily/perp-daily, 3h for 1h/perp-1h. Weekly is skipped (pre-existing inconsistency for some tokens).
+  - Telegram RED if any collection stale (catches writer silent failures: launchd posix_spawn errors, Python crashes before notifier, Docker down, etc.).
+  - Telegram GREEN heartbeat on Sundays only — absence of the weekly green = watchdog itself is broken.
+  - Self-error: if the watchdog itself crashes, a RED "Watchdog Self-Error" Telegram fires with the traceback.
 - **Production timeframes:** Daily + weekly + hourly (all 18 tokens, spot + perp). 4h not in production.
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual trigger only, writes to Atlas)
-- **Logs:** Date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day)
+- **Logs:** Date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day, watchdog: per-day).
+
+**Known launchd pitfalls** (see memory for details):
+- `StandardOutPath` / `StandardErrorPath` files with a stale `com.apple.macl` xattr cause silent `EX_CONFIG (78)` on spawn — `rm` the 0-byte file to let launchd recreate it fresh.
+- `wait_for_mongo()` must be invoked **inside** the `with open(LOG_FILE)` block, not before it — otherwise silent failures leave no trace.
 
 ### Pipeline Launchers (`bin/`)
 
@@ -164,6 +177,7 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 |--------|---------|
 | `bin/run_daily.py` | Daily launcher: spot + perp + weekly + CSV export + Telegram (called by launchd) |
 | `bin/run_hourly.py` | Hourly launcher: all 18 tokens 1h spot + perp, Telegram on failure only (called by launchd) |
+| `bin/run_watchdog.py` | MongoDB freshness watchdog: reads 72 collections, Telegram RED on stale / GREEN heartbeat on Sundays (called by launchd) |
 | `bin/btc-daily.sh` | Bash wrapper (for manual runs from terminal) |
 | `bin/btc-hourly.sh` | Bash wrapper (for manual runs from terminal) |
 | `bin/notify.sh` | Shared Telegram helper for bash wrappers |

@@ -415,6 +415,7 @@ python update.py --all --test
 **Phase I: COMPLETE** (2026-03-27) — Restored BTC-only 1h data (spot + perp) for external project consumption. Backfilled spot 1h from Jan 2020 (~54K docs), perp 1h from Dec 2024 (~11K docs, KuCoin Futures 1h history limit). New hourly workflow (`update-hourly.yml`) initially BTC-only; expanded to all 18 tokens in Phase J.
 **Phase J: COMPLETE** (2026-04-04) — Mac Mini M4 Pro migration. Python 3.12, 18 tokens (added PEPE/WIF/SHIB/WLD/ARB), local Docker MongoDB, launchd automation (daily 01:05 + hourly :05) via Python launchers (no bash/FDA needed), Telegram alerts with photo + emoji, CSV backup (1.0 GB), GH Actions cron disabled (manual fallback kept). 100 collections, 53/53 tests pass.
 **Phase K: COMPLETE** (2026-04-05) — Pipeline resilience fix. Added per-token error isolation to `run_update_all` and `run_seed_all` (matching existing `run_perp_update_all` pattern). Added 429 retry with exponential backoff in `extract.py`. Triggered by KuCoin 429 on DOT-USDT crashing the entire spot 1h run (2026-04-04 21:05 UTC).
+**Phase L: COMPLETE** (2026-04-17) — Daily tracker reliability + independent freshness watchdog. Fixed silent 13-day daily outage caused by two issues: (1) stale `com.apple.macl` xattr on the 0-byte `launchd-daily.*.log` files made launchd exit `EX_CONFIG (78)` before spawning Python, (2) daily and hourly both firing at `:05` caused `wait_for_mongo()` races on the shared Docker container. Staggered daily to `01:10`, reordered `run_daily.py` / `run_hourly.py` to open their log files **before** `wait_for_mongo()`, hardened `wait_for_mongo()` (90s timeout + pre-flight `docker start`). Added third launchd job `com.eeva.tracker-watchdog` (07:00 local) that reads 72 collections (18 tokens × {1d,1h} × {spot,perp}) and fires Telegram RED on staleness + GREEN heartbeat on Sundays. Backfilled 13 missed days (daily spot + daily perp).
 
 ### Notes
 - `pandas-ta` (original) is dead on PyPI for Python 3.11+. Using `pandas-ta-classic` (import as `pandas_ta_classic`).
@@ -513,3 +514,53 @@ On 2026-04-04 21:05 UTC, the hourly spot 1h run crashed on DOT-USDT (token #12 o
 - [x] `extract.py`: Added 3-attempt retry with exponential backoff (1s, 2s) for 429 errors in `fetch_candles`
 
 ### Phase K: COMPLETE (2026-04-05)
+
+---
+
+## Phase L: Daily Reliability + Freshness Watchdog (2026-04-17)
+
+> **Goal:** Restore the daily tracker (silently broken for 13 days), add an independent monitoring layer that catches writer failures the in-script notifier cannot.
+
+### Incident
+
+From 2026-04-05 through 2026-04-17, the daily launchd job silently exited `EX_CONFIG (78)` every night with zero output — no log file, no stderr, no Telegram. Hourly continued working throughout. 13 missed days of daily OHLCV + perp daily + weekly + CSV backup. Discovered when the user asked "check if the price_tracker still runs."
+
+### Root Causes
+
+1. **Stale `com.apple.macl` xattr on 0-byte launchd log files**: `launchd-daily.stdout.log` and `launchd-daily.stderr.log` (both 0 bytes since Apr 5) carried a corrupted macOS access-control extended attribute that caused `posix_spawn_file_actions` to fail silently. `plutil -lint` passed; the plist was valid. Same plist pattern but with `/tmp/`-based log paths worked immediately.
+2. **Daily/hourly collision on `:05`**: Both launchd jobs fired at the same minute and both ran `wait_for_mongo()` via `docker exec ... mongosh` on the same container. The hourly won; the daily's mongosh check timed out after 30s and `sys.exit(1)`'d. (This was the *secondary* failure mode that the watchdog would have caught if it existed.)
+3. **Logging initialization order**: `run_daily.py` opened its log file **after** `wait_for_mongo()`. Any failure before that point left no trace.
+
+### Changes
+
+**Reliability fixes:**
+- [x] `~/Library/LaunchAgents/com.eeva.tracker-daily.plist`: staggered fire time from `:05` → `:10` local to avoid collision with hourly
+- [x] `bin/run_daily.py`: reordered `main()` so `with open(LOG_FILE)` wraps `wait_for_mongo()` — failures now leave a trace
+- [x] `bin/run_daily.py`: hardened `wait_for_mongo()` — 30s → 90s timeout, added idempotent pre-flight `docker start`, logs status of each attempt
+- [x] `bin/run_hourly.py`: mirrored the same `wait_for_mongo()` hardening + reorder for consistency
+- [x] Deleted corrupted 0-byte `launchd-daily.{stdout,stderr}.log` files; launchd recreated fresh ones with clean xattrs
+
+**Watchdog (new monitoring layer):**
+- [x] Created `bin/run_watchdog.py` (~130 LOC): reads 72 collections (18 tokens × `{1d, 1h}` × `{spot, perp}`), compares `max(timestamp)` against thresholds (36h daily/perp-daily, 3h for 1h), fires Telegram RED on staleness
+- [x] Created `~/Library/LaunchAgents/com.eeva.tracker-watchdog.plist` — fires at 07:00 local daily (after overnight daily + first morning hourly)
+- [x] Green heartbeat on Sundays (absence of weekly green = watchdog itself broken)
+- [x] Self-error path: if the watchdog itself crashes, a RED "Watchdog Self-Error" Telegram fires with the full traceback (proven in practice when the first version had a missing `sys.path.insert`)
+
+### Backfill
+
+- [x] `python update.py --all --timeframe 1d` — 13 days × 18 tokens = 234 spot daily candles
+- [x] `python update.py --all --timeframe 1d --market-type perp` — 13 days × 18 tokens = 234 perp daily candles
+- [x] `python update.py --all --timeframe 1w` — partial (BTC/ETH/XRP caught up; SOL/PEPE/ARB still at 2026-04-02 for reasons unrelated to the collision — separate investigation)
+- [x] `python export_data.py` — CSV backup refreshed, 110 files, 851,865 rows, 1.1 GB
+
+### Verification
+
+- [x] `launchctl kickstart` on the daily plist now spawns cleanly (exit 0), full pipeline completes in ~60s
+- [x] Watchdog end-to-end tested: direct run (0 stale of 72), threshold-override stress test (36 correctly flagged), real Telegram RED + Watchdog-Self-Error Telegram both delivered
+- [x] MongoDB timestamps confirmed: all 18 tokens daily + perp daily = `2026-04-17`
+
+### Known Follow-ups
+
+- Weekly data for some tokens (SOL, PEPE, ARB and possibly others) stale at 2026-04-02 — pre-existing bug unrelated to the collision fix; worth a dedicated investigation. Weekly is explicitly skipped by the watchdog (threshold set to infinity) until root cause is understood.
+
+### Phase L: COMPLETE (2026-04-17)

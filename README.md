@@ -12,8 +12,9 @@ The **Crypto Price Tracker** is a fully automated data pipeline that fetches dai
 - **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for spot daily, Jan 2020 for perp daily) for strategy backtesting.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
-- **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:05 UTC + hourly all 18 tokens). GitHub Actions `workflow_dispatch` kept as manual fallback.
-- **Telegram Alerts**: Daily GREEN confirmation on success, RED alert on failure.
+- **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:10 local + hourly at :05 local). GitHub Actions `workflow_dispatch` kept as manual fallback.
+- **Independent Freshness Watchdog**: A third launchd job (`com.eeva.tracker-watchdog`, 07:00 local) reads 72 collections and fires a RED Telegram if any data is stale — catches failure modes where the writers crash silently before their in-script notifier can run.
+- **Telegram Alerts**: Daily GREEN confirmation on success, RED alert on failure, weekly GREEN watchdog heartbeat (Sundays).
 - **CSV Backup**: Daily export of all collections to `data/` (Time Machine backed up).
 
 This project is written in **Python**, leveraging:
@@ -116,7 +117,7 @@ Create a `.env` file in the project root:
     ```
 
 - **🔄 Start Updates**
-  - launchd runs daily updates (spot + perp + weekly + CSV backup) at 01:05 UTC automatically.
+  - launchd runs daily updates (spot + perp + weekly + CSV backup) at 01:10 local automatically.
   - Run manually for testing:
     ```bash
     python update.py --all --timeframe 1d
@@ -147,13 +148,22 @@ Create a `.env` file in the project root:
   - Dependencies: `ccxt` (pinned 4.5.40), `pandas`, `pandas-ta-classic`, `numpy`, `pymongo`, `mcp`
 
 - **🔄 Automation (launchd on Mac Mini M4 Pro)**
-  - **`com.eeva.tracker-daily`**: 01:05 UTC daily via `bin/run_daily.py`
+
+  All times are **local (Europe/Zurich)** — launchd `StartCalendarInterval` fires in machine local time, not UTC.
+
+  - **`com.eeva.tracker-daily`**: 01:10 local daily via `bin/run_daily.py`
     - spot daily → perp daily → spot weekly → CSV backup
     - Telegram GREEN on success, RED on failure
-  - **`com.eeva.tracker-hourly`**: every hour at :05 via `bin/run_hourly.py`
+    - Fires at `:10` (offset from hourly `:05`) to avoid `wait_for_mongo()` collision on the shared Docker container
+  - **`com.eeva.tracker-hourly`**: every hour at :05 local via `bin/run_hourly.py`
     - All 18 tokens spot 1h + perp 1h, Telegram RED on failure only
+  - **`com.eeva.tracker-watchdog`**: 07:00 local daily via `bin/run_watchdog.py`
+    - Independent freshness check — reads 72 collections (18 tokens × {1d,1h} × {spot,perp})
+    - Thresholds: 36h for daily/perp-daily, 3h for 1h/perp-1h
+    - Telegram RED on any stale collection; GREEN heartbeat on Sundays; "Watchdog Self-Error" RED if the watchdog itself crashes
+    - Covers silent failure modes where the writer dies before its in-script notifier can run (e.g., launchd `posix_spawn` errors, Docker down, Python import failures)
   - **Fallback**: GitHub Actions `workflow_dispatch` (manual trigger, writes to Atlas)
-  - **Logs**: Date-stamped in `logs/` (daily 30-day retention, hourly 14-day)
+  - **Logs**: Date-stamped in `logs/` (daily 30-day retention, hourly 14-day, watchdog per-day)
 
 - **🔒 Secrets Management**
   - **Local `.env`**: `MONGODB_URI`, `TG_BOT_TOKEN`, `TG_CHAT_ID`
