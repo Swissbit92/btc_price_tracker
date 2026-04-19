@@ -144,32 +144,18 @@ Minimal HTTP wrapper: `GET /` triggers `run_update_all(timeframe="1h")`. Used by
 
 ### Automation (launchd on Mac Mini M4 Pro)
 
-All times below are **local (Europe/Zurich)** — `StartCalendarInterval` in launchd plists always fires in the machine's local timezone, not UTC.
+Ecosystem launchd schedule + gotchas: `@../docs/shared/launchd_schedule.md`.
 
-- **`com.eeva.tracker-daily`** — daily at 01:10 local via `bin/run_daily.py`:
-  - Step 1: `update.py --all --timeframe 1d` (spot daily, 18 tokens)
-  - Step 2: `update.py --all --timeframe 1d --market-type perp` (perp daily + funding rates)
-  - Step 3: `update.py --all --timeframe 1w` (spot weekly)
-  - Step 4: `export_data.py` (CSV backup to `data/`)
-  - Telegram GREEN on success (with header image), RED on failure
-  - Fire time offset from `:05` to `:10` to avoid colliding with hourly's `wait_for_mongo()` check on the same Docker container.
-- **`com.eeva.tracker-hourly`** — every hour at :05 local via `bin/run_hourly.py`:
-  - Step 1: `update.py --all --timeframe 1h` (spot, 18 tokens)
-  - Step 2: `update.py --all --timeframe 1h --market-type perp` (perp, 18 tokens)
-  - Telegram RED on failure only (no success notification)
-- **`com.eeva.tracker-watchdog`** — daily at 07:00 local via `bin/run_watchdog.py`:
-  - Independent freshness check: queries `max(timestamp)` on 72 collections (18 tokens × {1d, 1h} × {spot, perp}).
-  - Thresholds: 36h for daily/perp-daily, 3h for 1h/perp-1h. Weekly is skipped (pre-existing inconsistency for some tokens).
-  - Telegram RED if any collection stale (catches writer silent failures: launchd posix_spawn errors, Python crashes before notifier, Docker down, etc.).
-  - Telegram GREEN heartbeat on Sundays only — absence of the weekly green = watchdog itself is broken.
-  - Self-error: if the watchdog itself crashes, a RED "Watchdog Self-Error" Telegram fires with the traceback.
-- **Production timeframes:** Daily + weekly + hourly (all 18 tokens, spot + perp). 4h not in production.
-- **Fallback:** GitHub Actions `workflow_dispatch` (manual trigger only, writes to Atlas)
-- **Logs:** Date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day, watchdog: per-day).
+Repo-specific job details:
 
-**Known launchd pitfalls** (see memory for details):
-- `StandardOutPath` / `StandardErrorPath` files with a stale `com.apple.macl` xattr cause silent `EX_CONFIG (78)` on spawn — `rm` the 0-byte file to let launchd recreate it fresh.
-- `wait_for_mongo()` must be invoked **inside** the `with open(LOG_FILE)` block, not before it — otherwise silent failures leave no trace.
+- **`com.eeva.tracker-daily`** (01:10 local) → `bin/run_daily.py`: spot-daily + perp-daily + weekly + CSV export + Telegram GREEN/RED. Offset from `:05` to `:10` to avoid colliding with hourly's `wait_for_mongo()`.
+- **`com.eeva.tracker-hourly`** (:05 every hour) → `bin/run_hourly.py`: 18 tokens 1h spot + perp. Telegram RED on failure only.
+- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 72 collections (18 tokens × {1d, 1h} × {spot, perp}). Thresholds: 36h daily/perp-daily, 3h hourly/perp-1h. Telegram RED on stale; GREEN heartbeat Sundays; self-error trace on watchdog crash.
+- **Production timeframes:** daily + weekly + hourly (all 18 tokens, spot + perp). 4h not in production.
+- **Fallback:** GitHub Actions `workflow_dispatch` (manual; writes to Atlas).
+- **Logs:** date-stamped in `logs/` (daily: 30-day retention, hourly: 14-day, watchdog: per-day).
+
+Repo-specific pitfall: `wait_for_mongo()` must be invoked **inside** the `with open(LOG_FILE)` block, not before it — otherwise silent failures leave no trace.
 
 ### Pipeline Launchers (`bin/`)
 
@@ -215,7 +201,7 @@ Note: CCXT uses KuCoin public endpoints only (no API key required).
 - Fear & Greed API is free, no signup: `https://api.alternative.me/fng/`. Graceful fallback if unreachable.
 - VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily and weekly.
 - `compute_all()` takes a `timeframe` parameter ("1h", "4h", "1d", "1w") that affects VWAP calculation.
-- Migration status tracked in `docs/MIGRATION.md`.
+- Migration history archived in `docs/archive/2026-04/MIGRATION.md` (one-time Mac Mini cutover, completed 2026-04-04).
 
 ## MCP Server (`mcp_server.py`)
 
