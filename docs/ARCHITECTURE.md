@@ -2,7 +2,7 @@
 title: Architecture (btc_price_tracker)
 status: active
 created: 2026-04-19
-last_reviewed_on: 2026-04-19
+last_reviewed_on: 2026-04-26
 review_in: 6 months
 applies_to: btc_price_tracker
 ---
@@ -74,7 +74,7 @@ Full list: [docs/INDICATORS.md](INDICATORS.md).
 |--------|---------|
 | `bin/run_daily.py` | spot + perp + weekly + CSV export + Telegram GREEN/RED |
 | `bin/run_hourly.py` | 18 tokens 1h spot + perp, Telegram RED on failure only |
-| `bin/run_watchdog.py` | Freshness check of 72 collections, Telegram RED on stale / GREEN Sundays |
+| `bin/run_watchdog.py` | Freshness check of 90 collections (72 OHLCV + 18 funding_rate), Telegram RED on stale / GREEN Sundays |
 | `bin/btc-daily.sh` | Bash wrapper for manual terminal runs |
 | `bin/btc-hourly.sh` | Bash wrapper for manual terminal runs |
 | `bin/notify.sh` | Shared Telegram helper |
@@ -84,6 +84,18 @@ launchd plists call Python launchers directly — macOS TCC blocks bash.
 ## Flask App (`app.py`)
 
 `GET /` triggers `run_update_all(timeframe="1h")`. Used by GCP Cloud Run + Cloud Scheduler.
+
+## Known API Quirks
+
+### KuCoin funding rate history — ~2-day dead zone
+
+`fetch_funding_rate_history(since=T)` returns 0 records silently when `T >= (now − 2d)`. This is a KuCoin API behaviour, not a CCXT bug.
+
+**Impact:** any incremental update that derives `since_ms` from a recent gap (e.g. yesterday's OHLCV date) will get 0 records and log nothing — invisible failure.
+
+**Mitigation (implemented 2026-04-26):** `_get_funding_since_ms()` always starts 3 days behind the last stored funding timestamp. The 3-day window is outside the dead zone. Upsert idempotency handles the overlap. See `pipeline.py:_get_funding_since_ms`.
+
+**Do not** replace this with a fixed lookback offset from `now` — the offset must be anchored to the last stored MongoDB timestamp to avoid re-fetching unbounded history on every run.
 
 ## CSV Backup (`export_data.py`)
 
