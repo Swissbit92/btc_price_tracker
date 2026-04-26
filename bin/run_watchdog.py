@@ -114,7 +114,7 @@ def notify_watchdog_error(detail):
 
 def check_freshness(log):
     from btc_tracker_mongodb.config import TOKENS
-    from btc_tracker_mongodb.db import get_collection
+    from btc_tracker_mongodb.db import get_collection, get_funding_collection
 
     now = datetime.now(timezone.utc)
     stale, checked = [], 0
@@ -139,6 +139,27 @@ def check_freshness(log):
                     )
             except Exception as e:
                 stale.append(f"{symbol} {tf} {mt}: QUERY ERROR {type(e).__name__}")
+
+        # Check funding rate collection (8h data — threshold 36h same as daily OHLCV)
+        checked += 1
+        funding_threshold = timedelta(hours=36)
+        try:
+            c = get_funding_collection(symbol)
+            doc = c.find_one(sort=[("timestamp", -1)])
+            if doc is None:
+                stale.append(f"{symbol} funding_rate: EMPTY")
+            else:
+                latest = doc["timestamp"]
+                if latest.tzinfo is None:
+                    latest = latest.replace(tzinfo=timezone.utc)
+                age = now - latest
+                if age > funding_threshold:
+                    stale.append(
+                        f"{symbol} funding_rate: {latest.strftime('%Y-%m-%d %H:%M')} "
+                        f"({int(age.total_seconds() / 3600)}h old, threshold 36h)"
+                    )
+        except Exception as e:
+            stale.append(f"{symbol} funding_rate: QUERY ERROR {type(e).__name__}")
 
     log.write(f"Checked {checked} collections — {len(stale)} stale\n")
     for s in stale:

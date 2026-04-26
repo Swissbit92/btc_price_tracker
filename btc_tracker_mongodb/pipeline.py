@@ -8,7 +8,8 @@ from datetime import datetime, timezone, timedelta
 from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
 from .db import (load_latest, load_all, get_latest_timestamp,
                  bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary,
-                 upsert_token_metadata, bulk_upsert_funding, ensure_funding_indexes)
+                 upsert_token_metadata, bulk_upsert_funding, ensure_funding_indexes,
+                 get_funding_collection)
 from .extract import fetch_candles, fetch_seed_candles
 from .extract_perp import fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history
 from .indicators import compute_all, get_numeric_cols
@@ -391,6 +392,26 @@ def _df_to_docs(df: pd.DataFrame) -> list[dict]:
 # Perpetual Futures — seed / update / backfill
 # ---------------------------------------------------------------------------
 
+_THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000
+
+
+def _get_funding_since_ms(symbol: str, test: bool, fallback_ms: int) -> int:
+    """Return the since_ms to use for an incremental funding rate fetch.
+
+    KuCoin's funding history API has a ~2-day delay: querying with since >= (now - 2d)
+    returns 0 records silently. To stay outside that dead zone, we start 3 days
+    behind the last stored funding timestamp. Upsert idempotency absorbs the overlap.
+    Falls back to fallback_ms (the OHLCV gap start) when no stored data exists.
+    """
+    coll = get_funding_collection(symbol, test)
+    doc = coll.find_one({}, {"_id": 0, "timestamp": 1}, sort=[("timestamp", -1)])
+    if doc is None:
+        return fallback_ms
+    ts = doc["timestamp"]
+    last_ms = int(ts.timestamp() * 1000) if hasattr(ts, "timestamp") else int(ts)
+    return max(0, last_ms - _THREE_DAYS_MS)
+
+
 def _fetch_and_store_funding(
     symbol: str,
     since_ms: int,
@@ -416,6 +437,8 @@ def _fetch_and_store_funding(
                 funding_docs_raw.append(doc)
             n_funding = bulk_upsert_funding(symbol, funding_docs_raw, test)
             print(f"[{tag}] Stored {n_funding} funding rate records")
+        else:
+            print(f"[{tag}] No new funding rate records (KuCoin returned empty)")
     except Exception as e:
         print(f"[{tag}] WARNING: funding rate fetch failed: {e}")
 
@@ -497,8 +520,11 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
         print(f"[perp-update] No new candles returned for {symbol} {timeframe}")
         return
 
-    # Fetch and store raw funding rates (separate collection)
-    _fetch_and_store_funding(symbol, fetch_since_ms, test, tag="perp-update")
+    # Fetch and store raw funding rates (separate collection).
+    # Use last stored funding ts - 3d (not OHLCV fetch_since_ms): KuCoin's funding
+    # history API returns 0 records silently when since >= (now - 2d).
+    funding_since_ms = _get_funding_since_ms(symbol, test, fallback_ms=fetch_since_ms)
+    _fetch_and_store_funding(symbol, funding_since_ms, test, tag="perp-update")
 
     # Load sliding window
     df_window = load_latest(symbol, timeframe, limit=SLIDING_WINDOW, test=test, market_type="perp")
