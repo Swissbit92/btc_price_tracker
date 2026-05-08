@@ -4,7 +4,7 @@
 # Schedule: 01:05 UTC daily via com.eeva.tracker-daily launchd plist
 set -uo pipefail
 
-PROJECT_DIR="/Users/swissbit./Desktop/Nephilim/btc_price_tracker"
+PROJECT_DIR="/Users/swissbit./nephilim/btc_price_tracker"
 cd "${PROJECT_DIR}" || exit 1
 VENV="${PROJECT_DIR}/venv/bin/python"
 LOG_DIR="${PROJECT_DIR}/logs"

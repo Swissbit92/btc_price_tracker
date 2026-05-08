@@ -4,7 +4,7 @@
 # Schedule: every hour at :05 via com.eeva.tracker-hourly launchd plist
 set -uo pipefail
 
-PROJECT_DIR="/Users/swissbit./Desktop/Nephilim/btc_price_tracker"
+PROJECT_DIR="/Users/swissbit./nephilim/btc_price_tracker"
 cd "${PROJECT_DIR}" || exit 1
 VENV="${PROJECT_DIR}/venv/bin/python"
 LOG_DIR="${PROJECT_DIR}/logs"
