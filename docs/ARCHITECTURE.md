@@ -2,7 +2,7 @@
 title: Architecture (btc_price_tracker)
 status: active
 created: 2026-04-19
-last_reviewed_on: 2026-04-26
+last_reviewed_on: 2026-05-30
 review_in: 6 months
 applies_to: btc_price_tracker
 ---
@@ -83,7 +83,7 @@ launchd plists call Python launchers directly — macOS TCC blocks bash.
 
 ## Flask App (`app.py`)
 
-`GET /` triggers `run_update_all(timeframe="1h")`. Used by GCP Cloud Run + Cloud Scheduler.
+`GET /` triggers `run_update_all(timeframe="1h")`. Kept for legacy Docker testing; primary automation is launchd on Mac Mini.
 
 ## Known API Quirks
 

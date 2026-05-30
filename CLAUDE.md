@@ -42,7 +42,7 @@ Pipeline design, MongoDB schema, module map, indicator list, launcher scripts: [
 
 - **`com.eeva.tracker-daily`** (01:10 local) → `bin/run_daily.py`: spot-daily + perp-daily + weekly + CSV export. Telegram GREEN/RED. Offset to :10 to avoid hourly `wait_for_mongo()` collision.
 - **`com.eeva.tracker-hourly`** (:05 every hour) → `bin/run_hourly.py`: 18 tokens 1h spot + perp. RED on failure only.
-- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 72 collections. Thresholds: 36h daily, 3h hourly. RED on stale; GREEN heartbeat Sundays.
+- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 90 collections (72 OHLCV + 18 funding_rate). Thresholds: 36h daily, 3h hourly. RED on stale; GREEN heartbeat Sundays.
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual; writes to Atlas).
 - **Logs:** `logs/` date-stamped (daily: 30-day, hourly: 14-day, watchdog: per-day).
 

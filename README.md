@@ -13,7 +13,7 @@ The **Crypto Price Tracker** is a fully automated data pipeline that fetches dai
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
 - **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:10 local + hourly at :05 local). GitHub Actions `workflow_dispatch` kept as manual fallback.
-- **Independent Freshness Watchdog**: A third launchd job (`com.eeva.tracker-watchdog`, 07:00 local) reads 72 collections and fires a RED Telegram if any data is stale — catches failure modes where the writers crash silently before their in-script notifier can run.
+- **Independent Freshness Watchdog**: A third launchd job (`com.eeva.tracker-watchdog`, 07:00 local) reads 90 collections (72 OHLCV + 18 funding_rate) and fires a RED Telegram if any data is stale — catches failure modes where the writers crash silently before their in-script notifier can run.
 - **Telegram Alerts**: Daily GREEN confirmation on success, RED alert on failure, weekly GREEN watchdog heartbeat (Sundays).
 - **CSV Backup**: Daily export of all collections to `data/` (Time Machine backed up).
 
@@ -158,7 +158,7 @@ Create a `.env` file in the project root:
   - **`com.eeva.tracker-hourly`**: every hour at :05 local via `bin/run_hourly.py`
     - All 18 tokens spot 1h + perp 1h, Telegram RED on failure only
   - **`com.eeva.tracker-watchdog`**: 07:00 local daily via `bin/run_watchdog.py`
-    - Independent freshness check — reads 72 collections (18 tokens × {1d,1h} × {spot,perp})
+    - Independent freshness check — reads 90 collections (72 OHLCV + 18 funding_rate)
     - Thresholds: 36h for daily/perp-daily, 3h for 1h/perp-1h
     - Telegram RED on any stale collection; GREEN heartbeat on Sundays; "Watchdog Self-Error" RED if the watchdog itself crashes
     - Covers silent failure modes where the writer dies before its in-script notifier can run (e.g., launchd `posix_spawn` errors, Docker down, Python import failures)
@@ -252,7 +252,7 @@ Create a `.env` file in the project root:
 
 - **🤖 MCP Server (Claude Code)**
   - The MCP server is auto-discovered by Claude Code via `.mcp.json` — no manual setup needed.
-  - Once connected, Claude Code can query your MongoDB data directly in conversation using 6 tools:
+  - Once connected, Claude Code can query your MongoDB data directly in conversation using 7 tools:
 
     | Tool | What it does |
     |------|-------------|
@@ -273,7 +273,7 @@ Create a `.env` file in the project root:
     docker build -t btc-tracker .
     docker run --env-file .env btc-tracker
     ```
-  - The container starts a Flask HTTP endpoint at port 8080 (used by Cloud Run).
+  - The container starts a Flask HTTP endpoint at port 8080 (legacy; primary automation is launchd on Mac Mini).
 
 Enjoy exploring and building on top of your live, cloud‐hosted Bitcoin price tracker!  
 
