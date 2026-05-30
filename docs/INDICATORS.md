@@ -2,7 +2,7 @@
 title: Indicator Glossary
 status: active
 created: 2026-04-03
-last_reviewed_on: 2026-04-19
+last_reviewed_on: 2026-05-30
 review_in: 6 months
 applies_to: btc_price_tracker
 ---
