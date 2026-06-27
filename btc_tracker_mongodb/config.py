@@ -2,9 +2,10 @@
 config.py — Central configuration for the multi-token price tracker.
 """
 
+# TON-USDT removed 2026-06-15: KuCoin delisted Toncoin spot+perp (2026-06-14/15).
 TOKENS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT",
           "DOGE-USDT", "AVAX-USDT", "LINK-USDT", "ADA-USDT", "SUI-USDT",
-          "TON-USDT", "DOT-USDT", "NEAR-USDT",
+          "DOT-USDT", "NEAR-USDT",
           "PEPE-USDT", "WIF-USDT", "SHIB-USDT", "WLD-USDT", "ARB-USDT"]
 
 # internal name -> KuCoin API candle type
@@ -103,13 +104,6 @@ TOKEN_METADATA = {
         "market_types": ["spot", "perp", "funding"],
         "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
     },
-    "TON-USDT": {
-        "name": "Toncoin",
-        "exchange": "kucoin",
-        "perp_contract": "TONUSDTM",
-        "market_types": ["spot", "perp", "funding"],
-        "timeframes": {"spot": ["1d", "1w"], "perp": ["1d"], "funding": ["8h"]},
-    },
     "DOT-USDT": {
         "name": "Polkadot",
         "exchange": "kucoin",
@@ -183,7 +177,7 @@ TIMEFRAME_GLOSSARY = {
     "1h": {
         "name": "Hourly",
         "interval": "1 hour",
-        "description": "One candle per hour. All 18 tokens (spot + perp) in production.",
+        "description": "One candle per hour. All tracked tokens (spot + perp) in production.",
         "production": True,
         "market_types": ["spot", "perp"],
     },

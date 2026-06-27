@@ -16,6 +16,11 @@ from pathlib import Path
 # Ensure we're in the project directory
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 os.chdir(PROJECT_DIR)
+sys.path.insert(0, str(PROJECT_DIR))
+
+# Token count is derived from config (not hardcoded) so labels never drift on add/remove.
+from btc_tracker_mongodb.config import TOKENS
+N_TOKENS = len(TOKENS)
 
 # Load .env
 from dotenv import load_dotenv
@@ -143,9 +148,9 @@ def wait_for_mongo(timeout=90, log=None):
 # ── Pipeline steps ──────────────────────────────────────────
 
 STEPS = [
-    ("Spot daily (18 tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d"]),
-    ("Perp daily (18 tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d", "--market-type", "perp"]),
-    ("Spot weekly (18 tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1w"]),
+    (f"Spot daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d"]),
+    (f"Perp daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d", "--market-type", "perp"]),
+    (f"Spot weekly ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1w"]),
     ("CSV backup",             [VENV_PYTHON, "export_data.py"]),
 ]
 
@@ -193,7 +198,7 @@ def main():
         )
         sys.exit(1)
     else:
-        notify_success(steps_passed, len(STEPS), duration, "18")
+        notify_success(steps_passed, len(STEPS), duration, str(N_TOKENS))
         sys.exit(0)
 
 
