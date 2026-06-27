@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# btc-daily.sh — Daily data pipeline (all 18 tokens)
+# btc-daily.sh — Daily data pipeline (all 17 tokens)
 # Runs: spot daily + perp daily + spot weekly + CSV export
 # Schedule: 01:05 UTC daily via com.eeva.tracker-daily launchd plist
 set -uo pipefail
@@ -56,9 +56,9 @@ run_step() {
     fi
 }
 
-run_step "Spot daily (18 tokens)" "${PROJECT_DIR}/update.py" --all --timeframe 1d
-run_step "Perp daily (18 tokens)" "${PROJECT_DIR}/update.py" --all --timeframe 1d --market-type perp
-run_step "Spot weekly (18 tokens)" "${PROJECT_DIR}/update.py" --all --timeframe 1w
+run_step "Spot daily (17 tokens)" "${PROJECT_DIR}/update.py" --all --timeframe 1d
+run_step "Perp daily (17 tokens)" "${PROJECT_DIR}/update.py" --all --timeframe 1d --market-type perp
+run_step "Spot weekly (17 tokens)" "${PROJECT_DIR}/update.py" --all --timeframe 1w
 run_step "CSV backup"             "${PROJECT_DIR}/export_data.py"
 
 ELAPSED=$(( $(date +%s) - STARTED ))

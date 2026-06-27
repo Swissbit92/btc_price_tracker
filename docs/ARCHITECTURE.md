@@ -36,13 +36,13 @@ Safe to re-run (upsert semantics), per-token error isolation, resumable.
 ## MongoDB Schema
 
 - Database: `btc_data` (production), `btc_data_test` (testing)
-- **Spot:** `{token}_daily_price_data`, `{token}_weekly_price_data`, `{token}_1h_price_data` — 18 each. Newer tokens (SUI/TON/WIF) have partial indicators (SMA_200/EMA_200 null until ~200 weeks history).
+- **Spot:** `{token}_daily_price_data`, `{token}_weekly_price_data`, `{token}_1h_price_data` — 17 each. Newer tokens (SUI/WIF) have partial indicators (SMA_200/EMA_200 null until ~200 weeks history).
 - **Perp:** `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data` — 18 each. No weekly (KuCoin Futures limitation). Perp 1h limited to ~15 months by exchange.
-- **Funding:** `{token}_funding_rate_data` — 18 collections, raw 8h granularity.
+- **Funding:** `{token}_funding_rate_data` — 17 collections, raw 8h granularity.
 - Each document keyed by `timestamp` (UTC); unique index enforced.
 - `indicator_glossary` collection: auto-synced every pipeline run.
 - `funding_rate_glossary`: per-token metadata (exchange, contract symbol, settlement schedule).
-- **Production timeframes:** daily + weekly + hourly (18 tokens, spot + perp). 4h not in production.
+- **Production timeframes:** daily + weekly + hourly (17 tokens, spot + perp). 4h not in production.
 - **Total:** ~110 collections.
 
 Ecosystem collection naming contract: [../docs/shared/mongodb_contract.md](../docs/shared/mongodb_contract.md)
@@ -73,8 +73,8 @@ Full list: [docs/INDICATORS.md](INDICATORS.md).
 | Script | Purpose |
 |--------|---------|
 | `bin/run_daily.py` | spot + perp + weekly + CSV export + Telegram GREEN/RED |
-| `bin/run_hourly.py` | 18 tokens 1h spot + perp, Telegram RED on failure only |
-| `bin/run_watchdog.py` | Freshness check of 90 collections (72 OHLCV + 18 funding_rate), Telegram RED on stale / GREEN Sundays |
+| `bin/run_hourly.py` | 17 tokens 1h spot + perp, Telegram RED on failure only |
+| `bin/run_watchdog.py` | Freshness check of 85 collections (68 OHLCV + 17 funding_rate), Telegram RED on stale / GREEN Sundays |
 | `bin/btc-daily.sh` | Bash wrapper for manual terminal runs |
 | `bin/btc-hourly.sh` | Bash wrapper for manual terminal runs |
 | `bin/notify.sh` | Shared Telegram helper |

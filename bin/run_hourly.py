@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_hourly.py — Hourly data pipeline launcher (all 18 tokens).
+run_hourly.py — Hourly data pipeline launcher (all tokens; count from config.TOKENS).
 
 Runs: spot 1h + perp 1h for all tokens
 Schedule: every hour at :05 via com.eeva.tracker-hourly launchd plist
@@ -16,6 +16,11 @@ from pathlib import Path
 # Ensure we're in the project directory
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 os.chdir(PROJECT_DIR)
+sys.path.insert(0, str(PROJECT_DIR))
+
+# Token count is derived from config (not hardcoded) so labels never drift on add/remove.
+from btc_tracker_mongodb.config import TOKENS
+N_TOKENS = len(TOKENS)
 
 # Load .env
 from dotenv import load_dotenv
@@ -48,7 +53,7 @@ def notify_failure(detail):
         f"\U0001f6a8 Price Tracker Alert \U0001f6a8\n\n"
         f"\u23f0 {ts}\n"
         f"\U0001f5a5 {HOSTNAME}\n\n"
-        f"\u274c Pipeline: Hourly Update (18 tokens)\n"
+        f"\u274c Pipeline: Hourly Update ({N_TOKENS} tokens)\n"
         f"\u26a0\ufe0f Status: FAILED\n\n"
         f"{detail}\n\n"
         f"\U0001f527 Check logs for details\n"
@@ -112,8 +117,8 @@ def wait_for_mongo(timeout=90, log=None):
 # ── Pipeline steps ──────────────────────────────────────────
 
 STEPS = [
-    ("Spot 1h (18 tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h"]),
-    ("Perp 1h (18 tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h", "--market-type", "perp"]),
+    (f"Spot 1h ({N_TOKENS} tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h"]),
+    (f"Perp 1h ({N_TOKENS} tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h", "--market-type", "perp"]),
 ]
 
 
@@ -122,7 +127,7 @@ def main():
 
     with open(LOG_FILE, "a") as log:
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        log.write(f"\n=== Hourly 1h (18 tokens) — {ts} ===\n")
+        log.write(f"\n=== Hourly 1h ({N_TOKENS} tokens) — {ts} ===\n")
         log.flush()
 
         if not wait_for_mongo(log=log):
@@ -142,7 +147,7 @@ def main():
         except Exception:
             tail = "(no log)"
         notify_failure(
-            f"\U0001fa99 Tokens: 18 (spot + perp 1h)\n"
+            f"\U0001fa99 Tokens: {N_TOKENS} (spot + perp 1h)\n"
             f"\u274c Failed: {', '.join(failed)}\n\n"
             f"<pre>{tail[:1000]}</pre>"
         )

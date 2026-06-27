@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Multi-token OHLCV pipeline — 18 tokens (BTC/ETH/SOL/XRP/BNB/DOGE/AVAX/LINK/ADA/SUI/TON/DOT/NEAR/PEPE/WIF/SHIB/WLD/ARB), ~85 indicators, spot + perp + funding, local Docker MongoDB. Runs via launchd on Mac Mini (daily 01:10 · hourly :05 · watchdog 07:00, all local Europe/Zurich).
+Multi-token OHLCV pipeline — 17 tokens (BTC/ETH/SOL/XRP/BNB/DOGE/AVAX/LINK/ADA/SUI/DOT/NEAR/PEPE/WIF/SHIB/WLD/ARB), ~85 indicators, spot + perp + funding, local Docker MongoDB. Runs via launchd on Mac Mini (daily 01:10 · hourly :05 · watchdog 07:00, all local Europe/Zurich).
 
 **Ecosystem context:** [../CLAUDE.md](../CLAUDE.md) · launchd schedule & gotchas: [../docs/shared/launchd_schedule.md](../docs/shared/launchd_schedule.md)
 
@@ -41,8 +41,8 @@ Pipeline design, MongoDB schema, module map, indicator list, launcher scripts: [
 ## launchd jobs (this repo)
 
 - **`com.eeva.tracker-daily`** (01:10 local) → `bin/run_daily.py`: spot-daily + perp-daily + weekly + CSV export. Telegram GREEN/RED. Offset to :10 to avoid hourly `wait_for_mongo()` collision.
-- **`com.eeva.tracker-hourly`** (:05 every hour) → `bin/run_hourly.py`: 18 tokens 1h spot + perp. RED on failure only.
-- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 90 collections (72 OHLCV + 18 funding_rate). Thresholds: 36h daily, 3h hourly. RED on stale; GREEN heartbeat Sundays.
+- **`com.eeva.tracker-hourly`** (:05 every hour) → `bin/run_hourly.py`: 17 tokens 1h spot + perp. RED on failure only.
+- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 85 collections (68 OHLCV + 17 funding_rate). Thresholds: 36h daily, 3h hourly. RED on stale; GREEN heartbeat Sundays.
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual; writes to Atlas).
 - **Logs:** `logs/` date-stamped (daily: 30-day, hourly: 14-day, watchdog: per-day).
 

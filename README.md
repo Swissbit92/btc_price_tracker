@@ -4,16 +4,16 @@
 
 ## 🚀 Project Overview
 
-The **Crypto Price Tracker** is a fully automated data pipeline that fetches daily, weekly, and hourly OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, TON, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (18 USDT pairs) from KuCoin via CCXT — both **spot** and **perpetual futures** markets — computes 85 technical indicators + ML features, fetches the Fear & Greed Index and funding rates, and stores everything in local Docker MongoDB. Runs on a **Mac Mini M4 Pro** via launchd automation with Telegram alerts. Designed for reliability and zero-downtime operation:
+The **Crypto Price Tracker** is a fully automated data pipeline that fetches daily, weekly, and hourly OHLCV candle data for **BTC, ETH, SOL, XRP, BNB, DOGE, AVAX, LINK, ADA, SUI, DOT, NEAR, PEPE, WIF, SHIB, WLD, ARB** (17 USDT pairs) from KuCoin via CCXT — both **spot** and **perpetual futures** markets — computes 85 technical indicators + ML features, fetches the Fear & Greed Index and funding rates, and stores everything in local Docker MongoDB. Runs on a **Mac Mini M4 Pro** via launchd automation with Telegram alerts. Designed for reliability and zero-downtime operation:
 
-- **Multi-Token, Multi-Market Support**: Tracks 18 tokens across daily + weekly timeframes for spot, plus daily perpetual futures with 8h funding rate history.
+- **Multi-Token, Multi-Market Support**: Tracks 17 tokens across daily + weekly timeframes for spot, plus daily perpetual futures with 8h funding rate history.
 - **Perpetual Futures Pipeline**: Fetches perp OHLCV from KuCoin Futures via `ccxt.kucoinfutures`, stores raw 8h funding rates separately for consumer-side aggregation.
 - **Historical Seeding**: Backfills up to 500+ candles per token/timeframe in one go.
 - **Deep Historical Backfill**: Fetches max available history from KuCoin (back to Oct 2017 for spot daily, Jan 2020 for perp daily) for strategy backtesting.
 - **Incremental Updates & Backfill**: Detects and fills any gaps to ensure no candle is ever missed, even if an execution fails.
 - **85 Technical Indicators + ML Features**: Trend (SMA, EMA, Ichimoku, ADX, Supertrend, KAMA, HMA, PSAR, Aroon), Momentum (RSI, StochRSI, Stochastic, MACD, Williams %R, CCI, TRIX), Volume (OBV, CMF, MFI), Volatility (Bollinger Bands, Donchian, ATR, NATR, Choppiness, Squeeze Momentum), Risk (VaR, CVaR, Omega Ratio, Tail Ratio, Ulcer Index, Kappa Ratio), plus Z-scores, candle ratios, and momentum slopes — computed from a single source of truth (`indicators.py`). See the full glossary at [`docs/INDICATORS.md`](docs/INDICATORS.md).
 - **Local Automation**: Runs via launchd on Mac Mini M4 Pro (daily at 01:10 local + hourly at :05 local). GitHub Actions `workflow_dispatch` kept as manual fallback.
-- **Independent Freshness Watchdog**: A third launchd job (`com.eeva.tracker-watchdog`, 07:00 local) reads 90 collections (72 OHLCV + 18 funding_rate) and fires a RED Telegram if any data is stale — catches failure modes where the writers crash silently before their in-script notifier can run.
+- **Independent Freshness Watchdog**: A third launchd job (`com.eeva.tracker-watchdog`, 07:00 local) reads 85 collections (68 OHLCV + 17 funding_rate) and fires a RED Telegram if any data is stale — catches failure modes where the writers crash silently before their in-script notifier can run.
 - **Telegram Alerts**: Daily GREEN confirmation on success, RED alert on failure, weekly GREEN watchdog heartbeat (Sundays).
 - **CSV Backup**: Daily export of all collections to `data/` (Time Machine backed up).
 
@@ -96,7 +96,7 @@ Create a `.env` file in the project root:
     ```
 
 - **🚀 Seed Historical Data**
-  - Seed all 18 tokens with 500 candles each:
+  - Seed all 17 tokens with 500 candles each:
     ```bash
     python seed.py --all
     ```
@@ -127,14 +127,14 @@ Create a `.env` file in the project root:
 ## ☁️ Architecture & Cloud Deployment
 
 - **🌐 Data Source**
-  - KuCoin Public API via CCXT — spot (18 USDT pairs) + KuCoin Futures (18 perp contracts) — no auth required
+  - KuCoin Public API via CCXT — spot (17 USDT pairs) + KuCoin Futures (17 perp contracts) — no auth required
 
 - **🗄️ Database**
   - Local Docker MongoDB 7 (`localhost:27017`)
   - Database: `btc_data` (~100 collections)
-  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data`, `{token}_1h_price_data` (18 daily + 18 weekly + 18 hourly)
-  - Perp collections: `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data` (18 daily + 18 hourly)
-  - Funding rate collections: `{token}_funding_rate_data` (18 collections, raw 8h granularity)
+  - Spot collections: `{token}_daily_price_data`, `{token}_weekly_price_data`, `{token}_1h_price_data` (17 daily + 17 weekly + 17 hourly)
+  - Perp collections: `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data` (17 daily + 17 hourly)
+  - Funding rate collections: `{token}_funding_rate_data` (17 collections, raw 8h granularity)
   - Glossary: `indicator_glossary`, `funding_rate_glossary`, `token_metadata`
 
 - **🐍 Processing Pipeline**
@@ -156,9 +156,9 @@ Create a `.env` file in the project root:
     - Telegram GREEN on success, RED on failure
     - Fires at `:10` (offset from hourly `:05`) to avoid `wait_for_mongo()` collision on the shared Docker container
   - **`com.eeva.tracker-hourly`**: every hour at :05 local via `bin/run_hourly.py`
-    - All 18 tokens spot 1h + perp 1h, Telegram RED on failure only
+    - All 17 tokens spot 1h + perp 1h, Telegram RED on failure only
   - **`com.eeva.tracker-watchdog`**: 07:00 local daily via `bin/run_watchdog.py`
-    - Independent freshness check — reads 90 collections (72 OHLCV + 18 funding_rate)
+    - Independent freshness check — reads 85 collections (68 OHLCV + 17 funding_rate)
     - Thresholds: 36h for daily/perp-daily, 3h for 1h/perp-1h
     - Telegram RED on any stale collection; GREEN heartbeat on Sundays; "Watchdog Self-Error" RED if the watchdog itself crashes
     - Covers silent failure modes where the writer dies before its in-script notifier can run (e.g., launchd `posix_spawn` errors, Docker down, Python import failures)
@@ -439,7 +439,7 @@ With these practices in place, you’ll have a rock-solid development workflow a
   - Enable GitHub **branch protection** to require green builds before merging.  
   - (Optional) Integrate with Slack or email via GitHub webhooks for failure alerts.  
 
-With this automation in place, launchd on the Mac Mini fetches, computes, and upserts candles for all 18 tokens daily — fully hands-off and production-ready!  
+With this automation in place, launchd on the Mac Mini fetches, computes, and upserts candles for all 17 tokens daily — fully hands-off and production-ready!  
 
 ## ❓ Troubleshooting & FAQs
 
