@@ -2,6 +2,8 @@
 
 Multi-token OHLCV pipeline — 17 tokens (BTC/ETH/SOL/XRP/BNB/DOGE/AVAX/LINK/ADA/SUI/DOT/NEAR/PEPE/WIF/SHIB/WLD/ARB), ~85 indicators, spot + perp + funding, local Docker MongoDB. Runs via launchd on Mac Mini (daily 01:10 · hourly :05 · watchdog 07:00, all local Europe/Zurich).
 
+**Lean XS research universe (2026-07-10, separate from the 17 production tokens):** an additive, disk-cheap path that ingests a curated ~283-token liquid-perp set (top-300 by 24h volume minus the 17 production tokens) with **perp-daily OHLCV + funding ONLY — no 85 indicators** (`compute_all()` skipped), to feed CRA's read-only `engine/xs/` cross-sectional funding re-test on a wide universe. Kept OUT of `config.TOKENS` and the production launchd jobs (zero impact on the live carry/directional pipeline); a hard guard refuses lean writes to production-token collections. Total added: **~52 MB** (lean = tiny) across ~566 collections. Commands: `python tools/xs/select_xs_universe.py --top-n 300` (rank+write `config/xs_universe.json`) → `python tools/xs/lean_ingest.py [--incremental] [--workers 4]` (backfill / refresh). Optional separate refresh: `deploy/com.eeva.xs-refresh.plist` (provided, NOT auto-installed). **Re-test outcome (2026-07-10):** funding-carry XS = 🔴 RED on the 300-token universe (55/40/57th pctile vs random-rank across splits) — the earlier 12-token GREEN was a thin-cross-section artifact; the expansion did its job (ruled it out cheaply). See CRA `docs/XS_ROUND_A_CROSS_SECTIONAL_2026-07-10.md`.
+
 **Ecosystem context:** [../CLAUDE.md](../CLAUDE.md) · launchd schedule & gotchas: [../docs/shared/launchd_schedule.md](../docs/shared/launchd_schedule.md)
 
 ## Commands
