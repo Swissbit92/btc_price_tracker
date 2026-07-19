@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eeva.tracker-hourly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin/python</string>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/bin/run_hourly.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker</string>
+
+    <!--
+        Captured into version control 2026-07-19. Until then this plist existed
+        only as a real file in ~/Library/LaunchAgents/ with no source of truth.
+        Unchanged from what is installed.
+
+        Install:
+          cp deploy/com.eeva.tracker-hourly.plist ~/Library/LaunchAgents/
+          launchctl unload ~/Library/LaunchAgents/com.eeva.tracker-hourly.plist
+          launchctl load   ~/Library/LaunchAgents/com.eeva.tracker-hourly.plist
+    -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-hourly.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-hourly.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>

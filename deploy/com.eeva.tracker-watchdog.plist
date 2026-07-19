@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eeva.tracker-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin/python</string>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/bin/run_watchdog.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker</string>
+
+    <!--
+        Captured into version control 2026-07-19. Until then this plist existed
+        only as a real file in ~/Library/LaunchAgents/ with no source of truth.
+        Unchanged from what is installed.
+
+        Install:
+          cp deploy/com.eeva.tracker-watchdog.plist ~/Library/LaunchAgents/
+          launchctl unload ~/Library/LaunchAgents/com.eeva.tracker-watchdog.plist
+          launchctl load   ~/Library/LaunchAgents/com.eeva.tracker-watchdog.plist
+    -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-watchdog.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-watchdog.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

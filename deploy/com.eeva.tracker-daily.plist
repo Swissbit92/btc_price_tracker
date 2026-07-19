@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eeva.tracker-daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin/python</string>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/bin/run_daily.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker</string>
+
+    <!--
+        Captured into version control 2026-07-19. Until then this plist existed
+        only as a real file in ~/Library/LaunchAgents/ with no source of truth.
+
+        Hour changed 1 -> 3 (2026-07-19). launchd fires on MACHINE LOCAL time,
+        so the old 01:10 slot landed at 00:10 UTC under CET but 23:10 UTC under
+        CEST — on the wrong side of the UTC day boundary for half the year, which
+        is why the job spent every summer writing that day's candle 50 minutes
+        before it closed. Any local hour from 02:10 to 22:00 is after the
+        boundary in both regimes; 03:10 leaves margin either side.
+
+        The code no longer depends on this: run_update refuses to write an
+        unclosed candle, and bin/run_hourly.py now closes the day at 00:05 UTC
+        year-round. The schedule change is about freshness, not correctness.
+
+        Install:
+          cp deploy/com.eeva.tracker-daily.plist ~/Library/LaunchAgents/
+          launchctl unload ~/Library/LaunchAgents/com.eeva.tracker-daily.plist
+          launchctl load   ~/Library/LaunchAgents/com.eeva.tracker-daily.plist
+    -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>10</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-daily.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-daily.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>
