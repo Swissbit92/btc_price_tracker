@@ -147,9 +147,13 @@ def wait_for_mongo(timeout=90, log=None):
 
 # ── Pipeline steps ──────────────────────────────────────────
 
+# --refresh-last 2 re-fetches the two most recent CLOSED days on every run.
+# The gap check only ever looks at the newest stored timestamp, so without this
+# a candle that the exchange later revises stays wrong forever. Two days is the
+# rolling self-heal window; it does not touch older history.
 STEPS = [
-    (f"Spot daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d"]),
-    (f"Perp daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d", "--market-type", "perp"]),
+    (f"Spot daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d", "--refresh-last", "2"]),
+    (f"Perp daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d", "--market-type", "perp", "--refresh-last", "2"]),
     (f"Spot weekly ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1w"]),
     ("CSV backup",             [VENV_PYTHON, "export_data.py"]),
 ]

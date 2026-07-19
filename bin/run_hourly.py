@@ -116,9 +116,23 @@ def wait_for_mongo(timeout=90, log=None):
 
 # ── Pipeline steps ──────────────────────────────────────────
 
+# The daily/weekly steps are near-free: `run_update` returns before fetching
+# anything unless a new period has closed, so on 23 of 24 runs they are a no-op.
+# What they buy is schedule independence. launchd fires on MACHINE LOCAL time,
+# so the daily job's 01:10 slot lands at 00:10 UTC under CET but 23:10 UTC under
+# CEST — on the wrong side of the UTC day boundary for half the year. Letting the
+# hourly job close the day means the completed daily bar lands at 00:05 UTC
+# year-round, whatever the daily job's local hour happens to be.
 STEPS = [
-    (f"Spot 1h ({N_TOKENS} tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h"]),
-    (f"Perp 1h ({N_TOKENS} tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h", "--market-type", "perp"]),
+    # --refresh-last 2 also repairs the hand-over: the last hour written by the
+    # old code is a partial bar that is already stored, so the gap check would
+    # skip it forever and freeze it wrong. The refresh window rewrites it once
+    # the hour has genuinely closed.
+    (f"Spot 1h ({N_TOKENS} tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h", "--refresh-last", "2"]),
+    (f"Perp 1h ({N_TOKENS} tokens)",  [VENV_PYTHON, "update.py", "--all", "--timeframe", "1h", "--market-type", "perp", "--refresh-last", "2"]),
+    (f"Spot daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d"]),
+    (f"Perp daily ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1d", "--market-type", "perp"]),
+    (f"Spot weekly ({N_TOKENS} tokens)", [VENV_PYTHON, "update.py", "--all", "--timeframe", "1w"]),
 ]
 
 

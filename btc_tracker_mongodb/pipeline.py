@@ -56,6 +56,34 @@ def _floor_timestamp(dt: datetime, timeframe: str) -> datetime:
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def _last_closed_period(dt: datetime, timeframe: str) -> datetime:
+    """Start of the newest candle that has FULLY closed at `dt`.
+
+    ``_floor_timestamp`` returns the start of the candle currently forming, which
+    is one period too new for anything that writes to the database. Exchanges
+    return the in-progress candle from ``fetch_ohlcv`` like any other, so storing
+    what the floor points at freezes a partial bar: the daily job at 23:10 UTC
+    was writing that day's candle 50 minutes early, and the hourly job at :05 was
+    writing each hour with five minutes of trading in it. Neither was ever
+    refreshed, because the next run's gap check saw the timestamp as already
+    stored.
+    """
+    return _floor_timestamp(dt, timeframe) - _timedelta_for(timeframe)
+
+
+def _drop_unclosed(df, timeframe: str, now: datetime | None = None):
+    """Drop any candle whose period has not closed yet.
+
+    Belt-and-braces alongside the fetch-window bound: an exchange is free to
+    return a candle we did not ask for, and one partial row silently poisons
+    every rolling indicator computed from it thereafter.
+    """
+    if df is None or df.empty:
+        return df
+    cutoff = _last_closed_period(now or datetime.now(timezone.utc), timeframe)
+    return df[df.index <= cutoff]
+
+
 def _validatable_cols(df) -> list[str]:
     """Numeric indicator cols that have at least one non-NaN value.
 
@@ -149,9 +177,16 @@ def run_seed_from_csv(
     print(f"[seed-csv] Upserted {n} documents into {'test' if test else 'prod'}")
 
 
-def run_update(symbol: str, timeframe: str, test: bool = False):
+def run_update(symbol: str, timeframe: str, test: bool = False, refresh_last: int = 0):
     """Incremental update: detect gaps since last stored timestamp, fetch
     missing candles, recompute indicators on the sliding window, upsert new rows.
+
+    Only CLOSED candles are ever written — see ``_last_closed_period``.
+
+    `refresh_last` re-fetches and overwrites the most recent N closed candles
+    even though they are already stored. Exchanges do revise recent candles, and
+    the gap check alone can never notice because it only looks at the newest
+    stored timestamp. Costs one extra fetch per token per run.
     """
     _sync_glossary(test)
     ensure_indexes(symbol, timeframe, test)
@@ -161,20 +196,26 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
         print(f"[update] No data for {symbol} {timeframe} — run seed first.")
         return
 
-    now = _floor_timestamp(datetime.now(timezone.utc), timeframe)
+    now = datetime.now(timezone.utc)
+    last_closed = _last_closed_period(now, timeframe)
     delta = _timedelta_for(timeframe)
 
-    if now <= last_ts:
-        print(f"[update] {symbol} {timeframe} — up to date (latest: {last_ts})")
+    fetch_from = last_ts + delta
+    if refresh_last > 0:
+        fetch_from = min(fetch_from, last_closed - (refresh_last - 1) * delta)
+
+    if fetch_from > last_closed:
+        print(f"[update] {symbol} {timeframe} — up to date (latest closed: {last_closed})")
         return
 
     # Fetch missing candles
-    fetch_since_ms = int((last_ts + delta).timestamp() * 1000)
-    print(f"[update] {symbol} {timeframe} — gap from {last_ts + delta} to {now}")
+    fetch_since_ms = int(fetch_from.timestamp() * 1000)
+    print(f"[update] {symbol} {timeframe} — gap from {fetch_from} to {last_closed}")
     df_missing = fetch_candles(symbol, timeframe, fetch_since_ms)
+    df_missing = _drop_unclosed(df_missing, timeframe, now)
 
     if df_missing.empty:
-        print(f"[update] No new candles returned for {symbol} {timeframe}")
+        print(f"[update] No new closed candles for {symbol} {timeframe}")
         return
 
     # Load sliding window
@@ -214,13 +255,13 @@ def run_update(symbol: str, timeframe: str, test: bool = False):
     print(f"[update] Upserted {n} new candles for {symbol} {timeframe}")
 
 
-def run_update_all(timeframe: str = None, test: bool = False):
+def run_update_all(timeframe: str = None, test: bool = False, refresh_last: int = 0):
     """Run incremental update for all tokens and timeframes."""
     timeframes = [timeframe] if timeframe else list(TIMEFRAMES.keys())
     for sym in TOKENS:
         for tf in timeframes:
             try:
-                run_update(sym, tf, test)
+                run_update(sym, tf, test, refresh_last=refresh_last)
             except Exception as e:
                 print(f"[update] ERROR: {sym} {tf} failed: {e}")
 
@@ -489,7 +530,7 @@ def run_perp_seed(
           f"({len(df)} fetched, {len(df_clean)} after NaN drop)")
 
 
-def run_perp_update(symbol: str, timeframe: str, test: bool = False):
+def run_perp_update(symbol: str, timeframe: str, test: bool = False, refresh_last: int = 0):
     """Incremental update for perpetual futures: detect gaps, fetch missing
     candles, recompute indicators on the sliding window, upsert new rows.
 
@@ -504,20 +545,26 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False):
         print(f"[perp-update] No data for {symbol} {timeframe} — run perp seed first.")
         return
 
-    now = _floor_timestamp(datetime.now(timezone.utc), timeframe)
+    now = datetime.now(timezone.utc)
+    last_closed = _last_closed_period(now, timeframe)
     delta = _timedelta_for(timeframe)
 
-    if now <= last_ts:
-        print(f"[perp-update] {symbol} {timeframe} — up to date (latest: {last_ts})")
+    fetch_from = last_ts + delta
+    if refresh_last > 0:
+        fetch_from = min(fetch_from, last_closed - (refresh_last - 1) * delta)
+
+    if fetch_from > last_closed:
+        print(f"[perp-update] {symbol} {timeframe} — up to date (latest closed: {last_closed})")
         return
 
     # Fetch missing candles
-    fetch_since_ms = int((last_ts + delta).timestamp() * 1000)
-    print(f"[perp-update] {symbol} {timeframe} — gap from {last_ts + delta} to {now}")
+    fetch_since_ms = int(fetch_from.timestamp() * 1000)
+    print(f"[perp-update] {symbol} {timeframe} — gap from {fetch_from} to {last_closed}")
     df_missing = fetch_perp_candles(symbol, timeframe, fetch_since_ms)
+    df_missing = _drop_unclosed(df_missing, timeframe, now)
 
     if df_missing.empty:
-        print(f"[perp-update] No new candles returned for {symbol} {timeframe}")
+        print(f"[perp-update] No new closed candles for {symbol} {timeframe}")
         return
 
     # Fetch and store raw funding rates (separate collection).
@@ -696,13 +743,13 @@ def run_perp_seed_all(
         print(f"\n[perp-seed] Failed: {', '.join(failed)}")
 
 
-def run_perp_update_all(timeframe: str = None, test: bool = False):
+def run_perp_update_all(timeframe: str = None, test: bool = False, refresh_last: int = 0):
     """Run incremental perp update for all tokens and timeframes."""
     timeframes = [timeframe] if timeframe else list(TIMEFRAMES.keys())
     for sym in TOKENS:
         for tf in timeframes:
             try:
-                run_perp_update(sym, tf, test)
+                run_perp_update(sym, tf, test, refresh_last=refresh_last)
             except Exception as e:
                 print(f"[perp-update] ERROR: {sym} {tf} failed: {e}")
 
