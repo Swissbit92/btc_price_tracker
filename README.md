@@ -345,7 +345,10 @@ Enjoy exploring and building on top of your live, cloud‐hosted Bitcoin price t
   - Verify your `Dockerfile` builds without errors:  
     ```bash
     docker build -t btc-tracker:test .
-    docker run --rm btc-tracker:test --help
+    # The image's CMD is gunicorn, so `--help` would be run as the command and
+    # fail. Check the interpreter instead — it must match the 3.12 the launchd
+    # jobs use, or the Atlas fallback runs a different Python than production.
+    docker run --rm --entrypoint python btc-tracker:test -V   # expect 3.12.x
     ```  
 
 - **🗄️ Use a Dev Database**  

@@ -58,6 +58,7 @@ Required in `.env`: `MONGODB_URI`, `TG_BOT_TOKEN`, `TG_CHAT_ID`. CCXT uses KuCoi
 
 ## Non-obvious constraints
 
+- **Python 3.12 in all four places** — the local `venv/` (what the launchd jobs execute), both `workflow_dispatch` workflows, and the `Dockerfile`. They drifted apart once: the workflows and Dockerfile sat on 3.11 while production ran 3.12, so the Atlas fallback would have run a different interpreter than production precisely when local execution was already broken. Change all four together.
 - Update scripts require **≥200 rows** in MongoDB before running (SMA_200/EMA_200 warmup). Always `seed.py` first on a fresh DB.
 - `pandas-ta-classic` only (not `pandas-ta` or `ta`). Import: `import pandas_ta_classic as ta`.
 - Fibonacci columns use underscores: `Fib_236`, `Fib_382` — MongoDB rejects dots in field names.
