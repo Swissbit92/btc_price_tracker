@@ -1,5 +1,15 @@
 # 🚀 Bitcoin Price Tracker
 
+
+> ⚠️ **Historical data caveat (added 2026-07-19).** Bars written *before* 2026-07-19 are
+> partial candles: the pipeline stored the currently-forming candle and its gap check then
+> skipped it forever. Measured against KuCoin's own candles, **76% of daily bars since
+> 2026-03-29 have a wrong Close** (mean 19.3 bps) and 12% miss the true high or low. Winter
+> bars are largely unaffected (01:10 CET = 00:10 UTC); summer bars are (01:10 CEST = 23:10
+> UTC). **Fixed forward** — new bars are correct and the last two periods self-heal — but
+> **history has not been repaired** and every backtest built on it inherits the error. The
+> repair is an open R10 decision: see [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ![Project Title](title_image/ChatGPT%20Image%20May%204,%202025,%2006_09_14%20PM.png)
 
 ## 🚀 Project Overview

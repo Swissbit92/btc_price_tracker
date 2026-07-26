@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  XS research-universe lean refresh (perp-daily OHLCV + funding only, no indicators).
+  SEPARATE from the production tracker-daily/hourly jobs — refreshes ONLY the ~283-token XS
+  research universe in config/xs_universe.json, never the production TOKENS collections.
+
+  NOT installed automatically. To enable:
+    cp deploy/com.eeva.xs-refresh.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.eeva.xs-refresh.plist
+  To disable:
+    launchctl unload ~/Library/LaunchAgents/com.eeva.xs-refresh.plist
+
+  Scheduled 02:30 local — after the production tracker-daily job (01:10) so they don't
+  contend for the KuCoin rate limit.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eeva.xs-refresh</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin/python</string>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/tools/xs/lean_ingest.py</string>
+        <string>--incremental</string>
+        <string>--workers</string>
+        <string>4</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-xs-refresh.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-xs-refresh.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
