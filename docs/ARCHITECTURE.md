@@ -9,6 +9,54 @@ applies_to: btc_price_tracker
 
 # Architecture
 
+## Topology
+
+```archview
+{
+  "caption": "Three launchd jobs, one shared pipeline, and the collections every downstream repo reads.",
+  "nodes": [
+    {"id":"launchd","label":"launchd","sub":"daily 03:10 · hourly :05 · watchdog 07:00","tech":"plist · local time","kind":"external"},
+    {"id":"daily","label":"bin/run_daily.py","sub":"spot + perp + weekly + CSV","tech":"Python 3.12","kind":"service"},
+    {"id":"hourly","label":"bin/run_hourly.py","sub":"17 tokens 1h · closes daily bars","tech":"Python 3.12","kind":"service"},
+    {"id":"watchdog","label":"bin/run_watchdog.py","sub":"freshness of 85 collections","tech":"Python 3.12","kind":"service"},
+    {"id":"pipeline","label":"pipeline.py","sub":"orchestration · per-token isolation","tech":"pandas","kind":"module"},
+    {"id":"extract","label":"extract.py","sub":"spot candles · 429 backoff","tech":"ccxt 4.5.40","kind":"module"},
+    {"id":"perp","label":"extract_perp.py","sub":"perp candles + funding","tech":"ccxt.kucoinfutures","kind":"module"},
+    {"id":"sentiment","label":"sentiment.py","sub":"Fear & Greed","tech":"requests","kind":"module"},
+    {"id":"indicators","label":"indicators.py","sub":"~85 indicators · single source","tech":"pandas-ta-classic","kind":"module"},
+    {"id":"db","label":"db.py","sub":"bulk upsert · unique on timestamp","tech":"pymongo","kind":"module"},
+    {"id":"spot_api","label":"KuCoin spot","sub":"public endpoints, no key","tech":"REST","kind":"external"},
+    {"id":"perp_api","label":"KuCoin Futures","sub":"~2-day funding dead zone","tech":"REST","kind":"external"},
+    {"id":"fng","label":"alternative.me","sub":"Fear & Greed Index","tech":"REST","kind":"external"},
+    {"id":"mongo","label":"MongoDB","sub":"~110 collections · btc_data","tech":"MongoDB 7 · Docker","kind":"store"},
+    {"id":"cra","label":"Crypto_Research_Assistant","sub":"reads, never writes","tech":"Python 3.12","kind":"external"}
+  ],
+  "edges": [
+    {"from":"launchd","to":"daily","style":"static"},
+    {"from":"launchd","to":"hourly","style":"static"},
+    {"from":"launchd","to":"watchdog","style":"static"},
+    {"from":"daily","to":"pipeline"},
+    {"from":"hourly","to":"pipeline"},
+    {"from":"pipeline","to":"extract"},
+    {"from":"pipeline","to":"perp"},
+    {"from":"pipeline","to":"sentiment"},
+    {"from":"pipeline","to":"indicators","label":"compute_all()"},
+    {"from":"extract","to":"spot_api","label":"OHLCV"},
+    {"from":"perp","to":"perp_api","label":"OHLCV + funding"},
+    {"from":"sentiment","to":"fng"},
+    {"from":"indicators","to":"db"},
+    {"from":"db","to":"mongo","label":"upsert closed bars only"},
+    {"from":"watchdog","to":"mongo","label":"freshness check"},
+    {"from":"mongo","to":"cra","label":"the column contract"}
+  ]
+}
+```
+
+**Only closed candles are written.** `run_update` bounds its window by
+`_last_closed_period()`; before 2026-07-19 it stored the forming candle and the
+gap check then skipped it forever. Indicator column names are a public API —
+renaming one is a cross-repo change ([ADR-001](../../docs/decisions/001-indicator-columns-as-public-api.md)).
+
 ## Data Pipeline
 
 All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):

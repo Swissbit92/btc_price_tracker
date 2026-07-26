@@ -1,0 +1,146 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="source-sha256" content="d158162204f7f312a24dedba0cb2978d0933cacdbe4f250fe3974a4fc246bf10">
+<meta name="renderer-sha256" content="9ef93153f5ca3fdc6cfed24d4a6bb08c28e646b4056a87f2b62f530ae35c2ab8">
+<title>btc_price_tracker — Architecture</title>
+<style>
+:root{
+  --void:#060908; --panel:#0C1211; --panel2:#101817;
+  --edge:#1C2827; --edge2:#283735;
+  --accent:#F5A623; --accent-dim:#F5A62318; --accent-glow:#F5A62366;
+  --phos:#4BE38A; --phos-dim:#4BE38A14; --red:#E8664F;
+  --txt:#D6E0DD; --mid:#7C8B87; --faint:#4E5C58;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+body{background:var(--void);color:var(--txt);font-family:var(--mono);
+  font-size:13px;line-height:1.65;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;
+  background:repeating-linear-gradient(180deg,transparent 0 2px,rgba(0,0,0,.22) 2px 3px);opacity:.5}
+.rig{max-width:70rem;margin:0 auto;padding:0 clamp(.75rem,3vw,1.75rem) 4rem}
+.bar{border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel2),var(--panel));
+  display:flex;flex-wrap:wrap;align-items:center;gap:.85rem;padding:.8rem 1.1rem;
+  position:sticky;top:0;z-index:50;margin-bottom:.4rem}
+.led{width:7px;height:7px;border-radius:50%;background:var(--phos);box-shadow:0 0 8px var(--phos)}
+@media (prefers-reduced-motion:no-preference){.led{animation:blip 2.4s ease-in-out infinite}}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.35}}
+h1{margin:0;font-size:1.05rem;font-weight:600;letter-spacing:.07em;color:var(--accent);
+  text-shadow:0 0 14px var(--accent-glow)}
+.tag{font-size:.58rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);
+  border:1px solid var(--edge2);padding:.1rem .4rem}
+.spacer{flex:1}
+nav{display:flex;flex-wrap:wrap;gap:.65rem;font-size:.6rem;letter-spacing:.09em}
+nav a{color:var(--mid);text-decoration:none;text-transform:uppercase}
+nav a:hover{color:var(--accent)}
+h2{margin:2.2rem 0 0;font-size:.76rem;font-weight:600;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--accent);border-bottom:1px solid var(--edge);padding-bottom:.45rem;scroll-margin-top:4.5rem}
+h3{margin:1.5rem 0 0;font-size:.7rem;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--txt)}
+p{margin:.75rem 0 0;max-width:78ch;color:var(--mid)}
+p strong{color:var(--txt);font-weight:600}
+code{color:var(--phos);background:var(--phos-dim);padding:.06em .28em;font-size:.9em}
+a{color:var(--accent)}
+ul,ol{margin:.75rem 0 0;padding-left:1.35rem;color:var(--mid);display:flex;flex-direction:column;gap:.35rem}
+li{max-width:76ch}
+ol li::marker{color:var(--accent);font-size:.85em}
+hr{border:0;border-top:1px solid var(--edge);margin:1.8rem 0 0}
+blockquote{margin:.9rem 0 0;padding:.1rem 0 .1rem 1rem;border-left:2px solid var(--accent)}
+blockquote p{margin:.5rem 0 0;color:var(--mid)}
+blockquote p:first-child{margin-top:0}
+pre{margin:.85rem 0 0;background:var(--panel);border:1px solid var(--edge);padding:.7rem .85rem;
+  overflow-x:auto;font-size:.76rem;color:var(--mid)}
+.tw{overflow-x:auto;margin:.9rem 0 0;border:1px solid var(--edge);background:var(--panel)}
+table{width:100%;min-width:30rem;border-collapse:collapse;font-size:.75rem}
+th,td{text-align:left;padding:.45rem .7rem;border-bottom:1px solid var(--edge);vertical-align:top}
+thead th{font-size:.57rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:400}
+tbody tr:last-child td{border-bottom:0}
+td{color:var(--mid)} td code{color:var(--phos)}
+.figwrap{margin:1.1rem 0 0;border:1px solid var(--edge);background:
+  radial-gradient(ellipse at 50% 40%,#0E1614 0%,#070B0A 82%);overflow-x:auto}
+.figwrap svg{display:block;margin:0 auto}
+.figcap{border-top:1px solid var(--edge);padding:.45rem .8rem;font-size:.66rem;color:var(--faint)}
+.nd{fill:var(--panel2);stroke:var(--edge2);stroke-width:1}
+.nd-store{stroke:var(--phos);fill:#0D1614}
+.nd-external{stroke:var(--edge2);stroke-dasharray:4 3;fill:#0A0F0E}
+.nd-service{stroke:var(--accent)}
+.nd-secret{stroke:var(--red);fill:#160C0A}
+.ndl{font-size:10.5px;fill:var(--txt);font-family:var(--mono)}
+.nds{font-size:8px;fill:var(--faint);font-family:var(--mono)}
+.ndt{font-size:7.5px;fill:var(--accent);font-family:var(--mono);opacity:.85;letter-spacing:.04em}
+.wire{fill:none;stroke:var(--edge2);stroke-width:1}
+.wire-a{fill:none;stroke:var(--accent);stroke-width:1.2;stroke-dasharray:3 5;opacity:.9}
+@media (prefers-reduced-motion:no-preference){
+  .wire-a{animation:mv .75s linear infinite} @keyframes mv{to{stroke-dashoffset:-8}}
+}
+.paused .wire-a,.paused .led{animation-play-state:paused}
+.wlab{font-size:8px;fill:var(--faint);font-family:var(--mono)}
+.grp{fill:none;stroke:var(--accent);stroke-dasharray:7 4;opacity:.4}
+.grpl{font-size:8px;fill:var(--accent);font-family:var(--mono);letter-spacing:.11em}
+footer{margin-top:3rem;border-top:1px solid var(--edge);padding-top:.9rem;display:flex;
+  flex-wrap:wrap;gap:1rem;align-items:center;font-size:.6rem;color:var(--faint);letter-spacing:.08em}
+button.pz{font-family:var(--mono);font-size:.6rem;background:transparent;color:var(--accent);
+  border:1px solid var(--edge2);padding:.2rem .55rem;cursor:pointer;letter-spacing:.08em}
+button.pz:hover{border-color:var(--accent)}
+:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="rig">
+<header class="bar">
+  <span class="led" aria-hidden="true"></span>
+  <h1>BTC_PRICE_TRACKER</h1>
+
+  <span class="spacer"></span>
+  <nav><a href="#topology">Topology</a><a href="#data-pipeline">Data Pipeline</a><a href="#deep-historical-backfill-backfill-py">Deep Historical Backfill (backfill.py)</a><a href="#mongodb-schema">MongoDB Schema</a><a href="#key-modules-btc-tracker-mongodb">Key Modules (btc_tracker_mongodb/)</a><a href="#technical-indicators-85">Technical Indicators (~85)</a><a href="#pipeline-launchers-bin">Pipeline Launchers (bin/)</a><a href="#flask-app-app-py">Flask App (app.py)</a><a href="#known-api-quirks">Known API Quirks</a><a href="#csv-backup-export-data-py">CSV Backup (export_data.py)</a></nav>
+</header>
+<h2 id="topology">Topology</h2>
+<div class="figwrap"><svg viewBox="0 0 856 882" width="856" height="882" role="img" aria-label="Three launchd jobs, one shared pipeline, and the collections every downstream repo reads."><path class="wire" d="M427.0 96.0 L427.0 126.0 L189.8 126.0 L189.8 151.0"/><path class="wire" d="M427.0 96.0 L427.0 126.0 L423.8 126.0 L423.8 151.0"/><path class="wire" d="M427.0 96.0 L427.0 126.0 L661.0 126.0 L661.0 151.0"/><path class="wire" d="M189.8 222.0 L189.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire-a" d="M189.8 222.0 L189.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire" d="M423.8 222.0 L423.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire-a" d="M423.8 222.0 L423.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L137.0 378.0 L137.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L137.0 378.0 L137.0 403.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L347.0 378.0 L347.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L347.0 378.0 L347.0 403.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L514.5 378.0 L514.5 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L514.5 378.0 L514.5 403.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L706.0 378.0 L706.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L706.0 378.0 L706.0 403.0"/><text class="wlab" x="574" y="374">compute_all()</text><path class="wire" d="M137.0 474.0 L137.0 504.0 L359.0 504.0 L359.0 529.0"/><path class="wire-a" d="M137.0 474.0 L137.0 504.0 L359.0 504.0 L359.0 529.0"/><text class="wlab" x="255" y="500">OHLCV</text><path class="wire" d="M347.0 474.0 L347.0 504.0 L569.0 504.0 L569.0 529.0"/><path class="wire-a" d="M347.0 474.0 L347.0 504.0 L569.0 504.0 L569.0 529.0"/><text class="wlab" x="465" y="500">OHLCV + funding</text><path class="wire" d="M514.5 474.0 L514.5 504.0 L759.5 504.0 L759.5 529.0"/><path class="wire-a" d="M514.5 474.0 L514.5 504.0 L759.5 504.0 L759.5 529.0"/><path class="wire" d="M706.0 474.0 L706.0 504.0 L131.5 504.0 L131.5 529.0"/><path class="wire-a" d="M706.0 474.0 L706.0 504.0 L131.5 504.0 L131.5 529.0"/><path class="wire" d="M131.5 600.0 L131.5 630.0 L427.0 630.0 L427.0 655.0"/><path class="wire-a" d="M131.5 600.0 L131.5 630.0 L427.0 630.0 L427.0 655.0"/><text class="wlab" x="286" y="626">upsert closed bars only</text><path class="wire" d="M661.0 222.0 L661.0 252.0 L12.0 252.0 L12.0 630.0 L427.0 630.0 L427.0 655.0"/><path class="wire-a" d="M661.0 222.0 L661.0 252.0 L12.0 252.0 L12.0 630.0 L427.0 630.0 L427.0 655.0"/><text class="wlab" x="17" y="408">freshness check</text><path class="wire" d="M427.0 726.0 L427.0 781.0"/><path class="wire-a" d="M427.0 726.0 L427.0 781.0"/><text class="wlab" x="434" y="752">the column contract</text><rect class="nd nd-external" x="320" y="30" width="215" height="66" rx="3"/><text class="ndl" x="330" y="51">launchd</text><text class="nds" x="330" y="65">daily 03:10 · hourly :05 · watchdog 07:00</text><text class="ndt" x="330" y="79">[plist · local time]</text><rect class="nd nd-service" x="93" y="156" width="193" height="66" rx="3"/><text class="ndl" x="104" y="177">bin/run_daily.py</text><text class="nds" x="104" y="191">spot + perp + weekly + CSV</text><text class="ndt" x="104" y="205">[Python 3.12]</text><rect class="nd nd-service" x="316" y="156" width="215" height="66" rx="3"/><text class="ndl" x="327" y="177">bin/run_hourly.py</text><text class="nds" x="327" y="191">17 tokens 1h · closes daily bars</text><text class="ndt" x="327" y="205">[Python 3.12]</text><rect class="nd nd-service" x="561" y="156" width="200" height="66" rx="3"/><text class="ndl" x="572" y="177">bin/run_watchdog.py</text><text class="nds" x="572" y="191">freshness of 85 collections</text><text class="ndt" x="572" y="205">[Python 3.12]</text><rect class="nd nd-module" x="320" y="282" width="215" height="66" rx="3"/><text class="ndl" x="330" y="303">pipeline.py</text><text class="nds" x="330" y="317">orchestration · per-token isolation</text><text class="ndt" x="330" y="331">[pandas]</text><rect class="nd nd-module" x="40" y="408" width="193" height="66" rx="3"/><text class="ndl" x="52" y="429">extract.py</text><text class="nds" x="52" y="443">spot candles · 429 backoff</text><text class="ndt" x="52" y="457">[ccxt 4.5.40]</text><rect class="nd nd-module" x="264" y="408" width="167" height="66" rx="3"/><text class="ndl" x="274" y="429">extract_perp.py</text><text class="nds" x="274" y="443">perp candles + funding</text><text class="ndt" x="274" y="457">[ccxt.kucoinfutures]</text><rect class="nd nd-module" x="460" y="408" width="108" height="66" rx="3"/><text class="ndl" x="472" y="429">sentiment.py</text><text class="nds" x="472" y="443">Fear &amp; Greed</text><text class="ndt" x="472" y="457">[requests]</text><rect class="nd nd-module" x="598" y="408" width="215" height="66" rx="3"/><text class="ndl" x="610" y="429">indicators.py</text><text class="nds" x="610" y="443">~85 indicators · single source</text><text class="ndt" x="610" y="457">[pandas-ta-classic]</text><rect class="nd nd-module" x="24" y="534" width="215" height="66" rx="3"/><text class="ndl" x="35" y="555">db.py</text><text class="nds" x="35" y="569">bulk upsert · unique on timestamp</text><text class="ndt" x="35" y="583">[pymongo]</text><rect class="nd nd-external" x="269" y="534" width="180" height="66" rx="3"/><text class="ndl" x="280" y="555">KuCoin spot</text><text class="nds" x="280" y="569">public endpoints, no key</text><text class="ndt" x="280" y="583">[REST]</text><rect class="nd nd-external" x="479" y="534" width="180" height="66" rx="3"/><text class="ndl" x="490" y="555">KuCoin Futures</text><text class="nds" x="490" y="569">~2-day funding dead zone</text><text class="ndt" x="490" y="583">[REST]</text><rect class="nd nd-external" x="689" y="534" width="141" height="66" rx="3"/><text class="ndl" x="700" y="555">alternative.me</text><text class="nds" x="700" y="569">Fear &amp; Greed Index</text><text class="ndt" x="700" y="583">[REST]</text><rect class="nd nd-store" x="327" y="660" width="200" height="66" rx="3"/><text class="ndl" x="338" y="681">MongoDB</text><text class="nds" x="338" y="695">~110 collections · btc_data</text><text class="ndt" x="338" y="709">[MongoDB 7 · Docker]</text><rect class="nd nd-external" x="334" y="786" width="186" height="66" rx="3"/><text class="ndl" x="345" y="807">Crypto_Research_Assistant</text><text class="nds" x="345" y="821">reads, never writes</text><text class="ndt" x="345" y="835">[Python 3.12]</text></svg><div class="figcap">Three launchd jobs, one shared pipeline, and the collections every downstream repo reads.</div></div>
+<p><strong>Only closed candles are written.</strong> <code>run_update</code> bounds its window by <code>_last_closed_period()</code>; before 2026-07-19 it stored the forming candle and the gap check then skipped it forever. Indicator column names are a public API — renaming one is a cross-repo change (<a href="../../docs/decisions/001-indicator-columns-as-public-api.md">ADR-001</a>).</p>
+<h2 id="data-pipeline">Data Pipeline</h2>
+<p>All tokens share the same pipeline pattern (orchestrated by <code>pipeline.py</code>):</p>
+<ol><li><strong>Load</strong> the last 200 rows from MongoDB as a sliding window</li><li><strong>Detect gaps</strong> between the latest stored timestamp and now</li><li><strong>Fetch missing candles</strong> from KuCoin via CCXT (<code>extract.py</code>)</li><li><strong>Append</strong> new candles to the sliding window DataFrame</li><li><strong>Recompute all indicators</strong> via <code>indicators.compute_all()</code> (single source of truth)</li><li><strong>Fetch Fear &amp; Greed Index</strong> from alternative.me API (<code>sentiment.py</code>)</li><li><strong>Bulk upsert</strong> only newly fetched rows into MongoDB, skipping any with NaN indicators</li></ol>
+<h2 id="deep-historical-backfill-backfill-py">Deep Historical Backfill (<code>backfill.py</code>)</h2>
+<p>One-time operation to fetch max available history from KuCoin:</p>
+<ol><li><strong>Determine start date</strong> — Oct 2017 for daily, Jan 2020 for 4h/1h (override via <code>--since</code>)</li><li><strong>Fetch all candles</strong> from KuCoin in paginated batches</li><li><strong>Load existing data</strong> from MongoDB (OHLCV only via <code>load_all()</code>)</li><li><strong>Merge</strong> — deduplicate on timestamp, existing OHLCV wins on conflicts</li><li><strong>Recompute all indicators</strong> on the full merged dataset</li><li><strong>Drop NaN warmup rows</strong>, set FnG to None</li><li><strong>Chunked upsert</strong> via <code>bulk_upsert_chunked()</code> (5K-doc batches)</li></ol>
+<p>Safe to re-run (upsert semantics), per-token error isolation, resumable.</p>
+<h2 id="mongodb-schema">MongoDB Schema</h2>
+<ul><li>Database: <code>btc_data</code> (production), <code>btc_data_test</code> (testing)</li><li><strong>Spot:</strong> <code>{token}_daily_price_data</code>, <code>{token}_weekly_price_data</code>, <code>{token}_1h_price_data</code> — 17 each. Newer tokens (SUI/WIF) have partial indicators (SMA_200/EMA_200 null until ~200 weeks history).</li><li><strong>Perp:</strong> <code>{token}_perp_daily_price_data</code>, <code>{token}_perp_1h_price_data</code> — 18 each. No weekly (KuCoin Futures limitation). Perp 1h limited to ~15 months by exchange.</li><li><strong>Funding:</strong> <code>{token}_funding_rate_data</code> — 17 collections, raw 8h granularity.</li><li>Each document keyed by <code>timestamp</code> (UTC); unique index enforced.</li><li><code>indicator_glossary</code> collection: auto-synced every pipeline run.</li><li><code>funding_rate_glossary</code>: per-token metadata (exchange, contract symbol, settlement schedule).</li><li><strong>Production timeframes:</strong> daily + weekly + hourly (17 tokens, spot + perp). 4h not in production.</li><li><strong>Total:</strong> ~110 collections.</li></ul>
+<p>Ecosystem collection naming contract: <a href="../docs/shared/mongodb_contract.md">../docs/shared/mongodb_contract.md</a></p>
+<h2 id="key-modules-btc-tracker-mongodb">Key Modules (<code>btc_tracker_mongodb/</code>)</h2>
+<div class="tw"><table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody><tr><td><code>config.py</code></td><td>TOKENS (18), TIMEFRAMES, MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping</td></tr><tr><td><code>db.py</code></td><td>MongoDB CRUD. All functions accept <code>market_type="spot"</code> param. Full funding CRUD.</td></tr><tr><td><code>extract.py</code></td><td>KuCoin <strong>spot</strong> CCXT: <code>fetch_candles</code> (429 retry/backoff), <code>fetch_seed_candles</code></td></tr><tr><td><code>extract_perp.py</code></td><td>KuCoin <strong>Futures</strong> via <code>ccxt.kucoinfutures</code>: perp candles, funding rate history</td></tr><tr><td><code>indicators.py</code></td><td>Single source of truth for ~85 indicators: <code>compute_all()</code>, <code>INDICATOR_GLOSSARY</code></td></tr><tr><td><code>sentiment.py</code></td><td>Fear &amp; Greed Index fetcher with graceful fallback</td></tr><tr><td><code>pipeline.py</code></td><td>Orchestration: spot + perp seed/update/backfill <code>_all</code> variants. Per-token error isolation.</td></tr><tr><td><code>query.py</code></td><td>Debug: symbol/timeframe/test flags, <code>--compare</code>, <code>--glossary</code> modes</td></tr></tbody></table></div>
+<h2 id="technical-indicators-85">Technical Indicators (~85)</h2>
+<p>Computed by <code>indicators.py</code> using <code>pandas-ta-classic</code>. Categories: Trend (SMA/EMA/Ichimoku/ADX/Supertrend/PSAR/Aroon), Momentum (RSI/StochRSI/MACD/Williams%R/CCI), Volume (OBV/CMF/MFI), Volatility (BB/Donchian/ATR/Squeeze), Risk (VaR/CVaR/Omega/Ulcer), ML Features (Z-scores/slopes/candle ratios), Sentiment (Fear &amp; Greed).</p>
+<p>Full list: <a href="INDICATORS.md">docs/INDICATORS.md</a>.</p>
+<p><strong>Change protocol:</strong> only edit <code>indicators.py</code>. Update <code>INDICATOR_GLOSSARY</code> for any column add/remove. Column names are a <strong>public API</strong> — coordinate with CRA before any rename (ADR-001).</p>
+<h2 id="pipeline-launchers-bin">Pipeline Launchers (<code>bin/</code>)</h2>
+<div class="tw"><table><thead><tr><th>Script</th><th>Purpose</th></tr></thead><tbody><tr><td><code>bin/run_daily.py</code></td><td>spot + perp + weekly + CSV export + Telegram GREEN/RED</td></tr><tr><td><code>bin/run_hourly.py</code></td><td>17 tokens 1h spot + perp, Telegram RED on failure only</td></tr><tr><td><code>bin/run_watchdog.py</code></td><td>Freshness check of 85 collections (68 OHLCV + 17 funding_rate), Telegram RED on stale / GREEN Sundays</td></tr><tr><td><code>bin/btc-daily.sh</code></td><td>Bash wrapper for manual terminal runs</td></tr><tr><td><code>bin/btc-hourly.sh</code></td><td>Bash wrapper for manual terminal runs</td></tr><tr><td><code>bin/notify.sh</code></td><td>Shared Telegram helper</td></tr></tbody></table></div>
+<p>launchd plists call Python launchers directly — macOS TCC blocks bash.</p>
+<h2 id="flask-app-app-py">Flask App (<code>app.py</code>)</h2>
+<p><code>GET /</code> triggers <code>run_update_all(timeframe="1h")</code>. Kept for legacy Docker testing; primary automation is launchd on Mac Mini.</p>
+<h2 id="known-api-quirks">Known API Quirks</h2>
+<h3 id="kucoin-funding-rate-history-2-day-dead-zone">KuCoin funding rate history — ~2-day dead zone</h3>
+<p><code>fetch_funding_rate_history(since=T)</code> returns 0 records silently when <code>T &gt;= (now − 2d)</code>. This is a KuCoin API behaviour, not a CCXT bug.</p>
+<p><strong>Impact:</strong> any incremental update that derives <code>since_ms</code> from a recent gap (e.g. yesterday's OHLCV date) will get 0 records and log nothing — invisible failure.</p>
+<p><strong>Mitigation (implemented 2026-04-26):</strong> <code>_get_funding_since_ms()</code> always starts 3 days behind the last stored funding timestamp. The 3-day window is outside the dead zone. Upsert idempotency handles the overlap. See <code>pipeline.py:_get_funding_since_ms</code>.</p>
+<p><strong>Do not</strong> replace this with a fixed lookback offset from <code>now</code> — the offset must be anchored to the last stored MongoDB timestamp to avoid re-fetching unbounded history on every run.</p>
+<h2 id="csv-backup-export-data-py">CSV Backup (<code>export_data.py</code>)</h2>
+<pre><code>python export_data.py                    # all tokens (auto Step 4 of daily pipeline)
+python export_data.py --tokens BTC,ETH
+python export_data.py --dry-run</code></pre>
+<footer>
+  <span>GENERATED FROM DOCS/ARCHITECTURE.MD — DO NOT EDIT THIS FILE</span>
+  <span>STRUCTURE ONLY, NO RUNTIME STATE</span>
+  <button class="pz" id="pz" aria-pressed="false">&#9208; PAUSE</button>
+</footer>
+</div>
+<script>
+(function(){
+  var b=document.getElementById('pz'),p=false;
+  b.addEventListener('click',function(){
+    p=!p;document.body.classList.toggle('paused',p);
+    b.setAttribute('aria-pressed',String(p));
+    b.textContent=p?'\u25B6 RESUME':'\u23F8 PAUSE';
+    Array.prototype.forEach.call(document.querySelectorAll('svg'),function(s){
+      if(p&&s.pauseAnimations)s.pauseAnimations();
+      if(!p&&s.unpauseAnimations)s.unpauseAnimations();
+    });
+  });
+})();
+</script>
