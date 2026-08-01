@@ -1,15 +1,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="source-sha256" content="d158162204f7f312a24dedba0cb2978d0933cacdbe4f250fe3974a4fc246bf10">
-<meta name="renderer-sha256" content="9ef93153f5ca3fdc6cfed24d4a6bb08c28e646b4056a87f2b62f530ae35c2ab8">
+<meta name="source-sha256" content="fb0bc05c8e45c759ddcfdd81c5087c24943bdc0061ebc7700c0181c1ce07053b">
+<meta name="renderer-sha256" content="36d4f842d4c507e9df4c8d45c8b205c4ad0bbda1942d3c1f2762c4349cd121a5">
 <title>btc_price_tracker — Architecture</title>
+<script>
+/* Before first paint, deliberately. Setting the theme after the stylesheet has
+   painted shows the wrong one for a frame — the flash people notice and nobody
+   can un-see. Dark stays the default when nothing is stored. */
+(function(){
+  try{
+    var t=localStorage.getItem('arch-theme');
+    if(!t) t=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+    document.documentElement.setAttribute('data-theme',t);
+  }catch(e){document.documentElement.setAttribute('data-theme','dark');}
+})();
+</script>
 <style>
 :root{
   --void:#060908; --panel:#0C1211; --panel2:#101817;
   --edge:#1C2827; --edge2:#283735;
   --accent:#F5A623; --accent-dim:#F5A62318; --accent-glow:#F5A62366;
   --phos:#4BE38A; --phos-dim:#4BE38A14; --red:#E8664F;
-  --txt:#D6E0DD; --mid:#7C8B87; --faint:#4E5C58;
+  /* Contrast, not taste. The old ramp put --faint at 2.85:1 on --void and --mid
+     at 5.62:1; the dimmest tier carries table headers, figure captions and the
+     8px sub-labels inside every diagram, so it failed WCAG AA exactly where the
+     type is smallest. Lifting --faint alone would have collapsed it into --mid,
+     so the whole ramp is re-spaced. Now 5.04 / 8.15 / 14.82 on --void, and the
+     tightest of the three still clears 4.5:1 against --panel2. */
+  --txt:#D6E0DD; --mid:#9CA8A5; --faint:#70847E;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
 }
 body{background:var(--void);color:var(--txt);font-family:var(--mono);
@@ -79,7 +97,111 @@ footer{margin-top:3rem;border-top:1px solid var(--edge);padding-top:.9rem;displa
 button.pz{font-family:var(--mono);font-size:.6rem;background:transparent;color:var(--accent);
   border:1px solid var(--edge2);padding:.2rem .55rem;cursor:pointer;letter-spacing:.08em}
 button.pz:hover{border-color:var(--accent)}
+button.pz[disabled]{opacity:.4;cursor:default;border-color:var(--edge)}
 :focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+
+/* Visible to a screen reader, absent from the page. Not display:none, which
+   removes it from the accessibility tree along with everything else. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+.legend{display:flex;flex-wrap:wrap;gap:.9rem;padding:.5rem .8rem;
+  border-top:1px solid var(--edge);font-size:.62rem;color:var(--faint)}
+.lgi{display:flex;align-items:center;gap:.35rem}
+.lgs{width:15px;height:10px;flex:none;border-radius:2px;
+  background:var(--panel2);border:1px solid var(--edge2)}
+.lgs-store{border-color:var(--phos);background:#0D1614}
+.lgs-external{border-style:dashed;background:#0A0F0E}
+.lgs-service{border-color:var(--accent)}
+.lgs-secret{border-color:var(--red);background:#160C0A}
+:root[data-theme="light"] .lgs{background:#FFFFFF}
+:root[data-theme="light"] .lgs-store{background:#F1F8F4}
+:root[data-theme="light"] .lgs-external{background:#F5F7F6}
+:root[data-theme="light"] .lgs-secret{background:#FDF3F1}
+
+/* ── flow walker ───────────────────────────────────────────────────────── */
+.flowctl{margin:.9rem 0 0;border:1px solid var(--edge);background:var(--panel)}
+.flowhd{display:flex;align-items:baseline;gap:.8rem;padding:.5rem .8rem;
+  border-bottom:1px solid var(--edge)}
+.flowlbl{font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.flowjump{margin-left:auto;font-size:.6rem;color:var(--mid);text-decoration:none}
+.flowjump:hover{color:var(--accent)}
+.flowlist{list-style:none;margin:0;padding:.4rem;display:flex;flex-wrap:wrap;
+  gap:.35rem}
+.flowlist li{font-size:.66rem;padding:.2rem .55rem;border:1px solid var(--edge2);
+  color:var(--mid);cursor:pointer;max-width:none}
+.flowlist li:hover{border-color:var(--accent);color:var(--txt)}
+.flowlist li[aria-selected="true"]{border-color:var(--accent);color:var(--accent);
+  background:var(--accent-dim)}
+.flownav{display:flex;align-items:center;gap:.5rem;padding:0 .8rem .5rem}
+.flowpos{font-size:.6rem;color:var(--faint);letter-spacing:.08em;min-width:5rem}
+.flowclear{margin-left:auto}
+.flowcap{margin:0;padding:.5rem .8rem;border-top:1px solid var(--edge);
+  font-size:.7rem;color:var(--mid);min-height:1.2rem}
+
+/* Dim with fill-opacity/stroke-opacity rather than `opacity`: the composite
+   property promotes every element to its own compositing layer, which is real
+   jank once a diagram has thirty boxes. These two are paint-only. */
+svg.flowing .nd,svg.flowing .wire,svg.flowing .wire-a,
+svg.flowing .ndl,svg.flowing .nds,svg.flowing .ndt,svg.flowing .wlab{
+  fill-opacity:.18;stroke-opacity:.18;transition:fill-opacity .18s,stroke-opacity .18s}
+svg.flowing [data-node].on-path .nd,svg.flowing [data-node].on-path .ndl,
+svg.flowing [data-node].on-path .nds,svg.flowing [data-node].on-path .ndt,
+svg.flowing [data-edge].on-path .wire,svg.flowing [data-edge].on-path .wire-a,
+svg.flowing [data-edge].on-path .wlab{fill-opacity:1;stroke-opacity:1}
+svg.flowing [data-node].at-step .nd{stroke:var(--accent);stroke-width:2}
+svg.flowing [data-edge].at-step .wire-a{stroke-width:2.4}
+
+@media (prefers-reduced-motion:reduce){
+  svg.flowing .nd,svg.flowing .wire,svg.flowing .wire-a,
+  svg.flowing .ndl,svg.flowing .nds,svg.flowing .ndt,svg.flowing .wlab{transition:none}
+}
+
+/* ── light theme ───────────────────────────────────────────────────────────
+   An attribute override, not light-dark(). The dark skin leans on glow —
+   text-shadow, box-shadow, a scanline overlay — and those have to be switched
+   off as a group, which a per-value colour function cannot express. */
+:root[data-theme="light"]{
+  --void:#F4F6F5; --panel:#FFFFFF; --panel2:#F9FBFA;
+  --edge:#D5DEDB; --edge2:#B9C6C2;
+  --phos:#0F7A44; --phos-dim:#0F7A4414; --red:#B3341C;
+  --txt:#12201C; --mid:#3F514C; --faint:#5A6B66;
+}
+:root[data-theme="light"] body::before{display:none}
+:root[data-theme="light"] h1{text-shadow:none}
+:root[data-theme="light"] .led{box-shadow:none}
+:root[data-theme="light"] .figwrap{background:#FFFFFF}
+:root[data-theme="light"] .nd{fill:#FFFFFF}
+:root[data-theme="light"] .nd-store{fill:#F1F8F4}
+:root[data-theme="light"] .nd-external{fill:#F5F7F6}
+:root[data-theme="light"] .nd-secret{fill:#FDF3F1}
+
+/* ── print ─────────────────────────────────────────────────────────────────
+   The scanline overlay and a near-black page background are a screen
+   affectation; on paper they are a toner bill and an unreadable page. */
+@media print{
+  :root{
+    --void:#FFFFFF; --panel:#FFFFFF; --panel2:#FFFFFF;
+    --edge:#9AA8A4; --edge2:#6E7D79;
+    --txt:#000000; --mid:#1C2A26; --faint:#3D4B47; --phos:#0A5C33;
+  }
+  @page{margin:14mm}
+  body{background:#fff;font-size:10pt}
+  body::before{display:none}
+  .bar{position:static;border-bottom:1px solid var(--edge)}
+  nav,button.pz,.flownav,.flowjump{display:none}
+  h1{text-shadow:none}
+  .led{box-shadow:none}
+  h2,h3{break-after:avoid}
+  pre,table,.figwrap,.flowctl,blockquote{break-inside:avoid}
+  .figwrap{background:#fff}
+  .nd{fill:#fff}
+  /* Every flow, spelled out — the picker is gone on paper, so the steps have to
+     be readable as a list or the section says nothing. */
+  .flowlist li{border-color:var(--edge2)}
+  a{color:inherit;text-decoration:underline}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:.8em;color:var(--faint)}
+}
 </style>
 
 <div class="rig">
@@ -91,7 +213,7 @@ button.pz:hover{border-color:var(--accent)}
   <nav><a href="#topology">Topology</a><a href="#data-pipeline">Data Pipeline</a><a href="#deep-historical-backfill-backfill-py">Deep Historical Backfill (backfill.py)</a><a href="#mongodb-schema">MongoDB Schema</a><a href="#key-modules-btc-tracker-mongodb">Key Modules (btc_tracker_mongodb/)</a><a href="#technical-indicators-85">Technical Indicators (~85)</a><a href="#pipeline-launchers-bin">Pipeline Launchers (bin/)</a><a href="#flask-app-app-py">Flask App (app.py)</a><a href="#known-api-quirks">Known API Quirks</a><a href="#csv-backup-export-data-py">CSV Backup (export_data.py)</a></nav>
 </header>
 <h2 id="topology">Topology</h2>
-<div class="figwrap"><svg viewBox="0 0 856 882" width="856" height="882" role="img" aria-label="Three launchd jobs, one shared pipeline, and the collections every downstream repo reads."><path class="wire" d="M427.0 96.0 L427.0 126.0 L189.8 126.0 L189.8 151.0"/><path class="wire" d="M427.0 96.0 L427.0 126.0 L423.8 126.0 L423.8 151.0"/><path class="wire" d="M427.0 96.0 L427.0 126.0 L661.0 126.0 L661.0 151.0"/><path class="wire" d="M189.8 222.0 L189.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire-a" d="M189.8 222.0 L189.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire" d="M423.8 222.0 L423.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire-a" d="M423.8 222.0 L423.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L137.0 378.0 L137.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L137.0 378.0 L137.0 403.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L347.0 378.0 L347.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L347.0 378.0 L347.0 403.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L514.5 378.0 L514.5 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L514.5 378.0 L514.5 403.0"/><path class="wire" d="M427.0 348.0 L427.0 378.0 L706.0 378.0 L706.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L706.0 378.0 L706.0 403.0"/><text class="wlab" x="574" y="374">compute_all()</text><path class="wire" d="M137.0 474.0 L137.0 504.0 L359.0 504.0 L359.0 529.0"/><path class="wire-a" d="M137.0 474.0 L137.0 504.0 L359.0 504.0 L359.0 529.0"/><text class="wlab" x="255" y="500">OHLCV</text><path class="wire" d="M347.0 474.0 L347.0 504.0 L569.0 504.0 L569.0 529.0"/><path class="wire-a" d="M347.0 474.0 L347.0 504.0 L569.0 504.0 L569.0 529.0"/><text class="wlab" x="465" y="500">OHLCV + funding</text><path class="wire" d="M514.5 474.0 L514.5 504.0 L759.5 504.0 L759.5 529.0"/><path class="wire-a" d="M514.5 474.0 L514.5 504.0 L759.5 504.0 L759.5 529.0"/><path class="wire" d="M706.0 474.0 L706.0 504.0 L131.5 504.0 L131.5 529.0"/><path class="wire-a" d="M706.0 474.0 L706.0 504.0 L131.5 504.0 L131.5 529.0"/><path class="wire" d="M131.5 600.0 L131.5 630.0 L427.0 630.0 L427.0 655.0"/><path class="wire-a" d="M131.5 600.0 L131.5 630.0 L427.0 630.0 L427.0 655.0"/><text class="wlab" x="286" y="626">upsert closed bars only</text><path class="wire" d="M661.0 222.0 L661.0 252.0 L12.0 252.0 L12.0 630.0 L427.0 630.0 L427.0 655.0"/><path class="wire-a" d="M661.0 222.0 L661.0 252.0 L12.0 252.0 L12.0 630.0 L427.0 630.0 L427.0 655.0"/><text class="wlab" x="17" y="408">freshness check</text><path class="wire" d="M427.0 726.0 L427.0 781.0"/><path class="wire-a" d="M427.0 726.0 L427.0 781.0"/><text class="wlab" x="434" y="752">the column contract</text><rect class="nd nd-external" x="320" y="30" width="215" height="66" rx="3"/><text class="ndl" x="330" y="51">launchd</text><text class="nds" x="330" y="65">daily 03:10 · hourly :05 · watchdog 07:00</text><text class="ndt" x="330" y="79">[plist · local time]</text><rect class="nd nd-service" x="93" y="156" width="193" height="66" rx="3"/><text class="ndl" x="104" y="177">bin/run_daily.py</text><text class="nds" x="104" y="191">spot + perp + weekly + CSV</text><text class="ndt" x="104" y="205">[Python 3.12]</text><rect class="nd nd-service" x="316" y="156" width="215" height="66" rx="3"/><text class="ndl" x="327" y="177">bin/run_hourly.py</text><text class="nds" x="327" y="191">17 tokens 1h · closes daily bars</text><text class="ndt" x="327" y="205">[Python 3.12]</text><rect class="nd nd-service" x="561" y="156" width="200" height="66" rx="3"/><text class="ndl" x="572" y="177">bin/run_watchdog.py</text><text class="nds" x="572" y="191">freshness of 85 collections</text><text class="ndt" x="572" y="205">[Python 3.12]</text><rect class="nd nd-module" x="320" y="282" width="215" height="66" rx="3"/><text class="ndl" x="330" y="303">pipeline.py</text><text class="nds" x="330" y="317">orchestration · per-token isolation</text><text class="ndt" x="330" y="331">[pandas]</text><rect class="nd nd-module" x="40" y="408" width="193" height="66" rx="3"/><text class="ndl" x="52" y="429">extract.py</text><text class="nds" x="52" y="443">spot candles · 429 backoff</text><text class="ndt" x="52" y="457">[ccxt 4.5.40]</text><rect class="nd nd-module" x="264" y="408" width="167" height="66" rx="3"/><text class="ndl" x="274" y="429">extract_perp.py</text><text class="nds" x="274" y="443">perp candles + funding</text><text class="ndt" x="274" y="457">[ccxt.kucoinfutures]</text><rect class="nd nd-module" x="460" y="408" width="108" height="66" rx="3"/><text class="ndl" x="472" y="429">sentiment.py</text><text class="nds" x="472" y="443">Fear &amp; Greed</text><text class="ndt" x="472" y="457">[requests]</text><rect class="nd nd-module" x="598" y="408" width="215" height="66" rx="3"/><text class="ndl" x="610" y="429">indicators.py</text><text class="nds" x="610" y="443">~85 indicators · single source</text><text class="ndt" x="610" y="457">[pandas-ta-classic]</text><rect class="nd nd-module" x="24" y="534" width="215" height="66" rx="3"/><text class="ndl" x="35" y="555">db.py</text><text class="nds" x="35" y="569">bulk upsert · unique on timestamp</text><text class="ndt" x="35" y="583">[pymongo]</text><rect class="nd nd-external" x="269" y="534" width="180" height="66" rx="3"/><text class="ndl" x="280" y="555">KuCoin spot</text><text class="nds" x="280" y="569">public endpoints, no key</text><text class="ndt" x="280" y="583">[REST]</text><rect class="nd nd-external" x="479" y="534" width="180" height="66" rx="3"/><text class="ndl" x="490" y="555">KuCoin Futures</text><text class="nds" x="490" y="569">~2-day funding dead zone</text><text class="ndt" x="490" y="583">[REST]</text><rect class="nd nd-external" x="689" y="534" width="141" height="66" rx="3"/><text class="ndl" x="700" y="555">alternative.me</text><text class="nds" x="700" y="569">Fear &amp; Greed Index</text><text class="ndt" x="700" y="583">[REST]</text><rect class="nd nd-store" x="327" y="660" width="200" height="66" rx="3"/><text class="ndl" x="338" y="681">MongoDB</text><text class="nds" x="338" y="695">~110 collections · btc_data</text><text class="ndt" x="338" y="709">[MongoDB 7 · Docker]</text><rect class="nd nd-external" x="334" y="786" width="186" height="66" rx="3"/><text class="ndl" x="345" y="807">Crypto_Research_Assistant</text><text class="nds" x="345" y="821">reads, never writes</text><text class="ndt" x="345" y="835">[Python 3.12]</text></svg><div class="figcap">Three launchd jobs, one shared pipeline, and the collections every downstream repo reads.</div></div>
+<div class="figwrap"><svg id="fig-f1" viewBox="0 0 856 882" width="856" height="882" role="img" aria-label="Three launchd jobs, one shared pipeline, and the collections every downstream repo reads."><g data-edge-from="launchd" data-edge-to="daily"><path class="wire" d="M427.0 96.0 L427.0 126.0 L189.8 126.0 L189.8 151.0"/></g><g data-edge-from="launchd" data-edge-to="hourly"><path class="wire" d="M427.0 96.0 L427.0 126.0 L423.8 126.0 L423.8 151.0"/></g><g data-edge-from="launchd" data-edge-to="watchdog"><path class="wire" d="M427.0 96.0 L427.0 126.0 L661.0 126.0 L661.0 151.0"/></g><g data-edge-from="daily" data-edge-to="pipeline"><path class="wire" d="M189.8 222.0 L189.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire-a" d="M189.8 222.0 L189.8 252.0 L427.0 252.0 L427.0 277.0"/></g><g data-edge-from="hourly" data-edge-to="pipeline"><path class="wire" d="M423.8 222.0 L423.8 252.0 L427.0 252.0 L427.0 277.0"/><path class="wire-a" d="M423.8 222.0 L423.8 252.0 L427.0 252.0 L427.0 277.0"/></g><g data-edge-from="pipeline" data-edge-to="extract"><path class="wire" d="M427.0 348.0 L427.0 378.0 L137.0 378.0 L137.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L137.0 378.0 L137.0 403.0"/></g><g data-edge-from="pipeline" data-edge-to="perp"><path class="wire" d="M427.0 348.0 L427.0 378.0 L347.0 378.0 L347.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L347.0 378.0 L347.0 403.0"/></g><g data-edge-from="pipeline" data-edge-to="sentiment"><path class="wire" d="M427.0 348.0 L427.0 378.0 L514.5 378.0 L514.5 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L514.5 378.0 L514.5 403.0"/></g><g data-edge-from="pipeline" data-edge-to="indicators"><path class="wire" d="M427.0 348.0 L427.0 378.0 L706.0 378.0 L706.0 403.0"/><path class="wire-a" d="M427.0 348.0 L427.0 378.0 L706.0 378.0 L706.0 403.0"/><text class="wlab" x="574" y="374">compute_all()</text></g><g data-edge-from="extract" data-edge-to="spot_api"><path class="wire" d="M137.0 474.0 L137.0 504.0 L359.0 504.0 L359.0 529.0"/><path class="wire-a" d="M137.0 474.0 L137.0 504.0 L359.0 504.0 L359.0 529.0"/><text class="wlab" x="255" y="500">OHLCV</text></g><g data-edge-from="perp" data-edge-to="perp_api"><path class="wire" d="M347.0 474.0 L347.0 504.0 L569.0 504.0 L569.0 529.0"/><path class="wire-a" d="M347.0 474.0 L347.0 504.0 L569.0 504.0 L569.0 529.0"/><text class="wlab" x="465" y="500">OHLCV + funding</text></g><g data-edge-from="sentiment" data-edge-to="fng"><path class="wire" d="M514.5 474.0 L514.5 504.0 L759.5 504.0 L759.5 529.0"/><path class="wire-a" d="M514.5 474.0 L514.5 504.0 L759.5 504.0 L759.5 529.0"/></g><g data-edge-from="indicators" data-edge-to="db"><path class="wire" d="M706.0 474.0 L706.0 504.0 L131.5 504.0 L131.5 529.0"/><path class="wire-a" d="M706.0 474.0 L706.0 504.0 L131.5 504.0 L131.5 529.0"/></g><g data-edge-from="db" data-edge-to="mongo"><path class="wire" d="M131.5 600.0 L131.5 630.0 L427.0 630.0 L427.0 655.0"/><path class="wire-a" d="M131.5 600.0 L131.5 630.0 L427.0 630.0 L427.0 655.0"/><text class="wlab" x="286" y="626">upsert closed bars only</text></g><g data-edge-from="watchdog" data-edge-to="mongo"><path class="wire" d="M661.0 222.0 L661.0 252.0 L12.0 252.0 L12.0 630.0 L427.0 630.0 L427.0 655.0"/><path class="wire-a" d="M661.0 222.0 L661.0 252.0 L12.0 252.0 L12.0 630.0 L427.0 630.0 L427.0 655.0"/><text class="wlab" x="17" y="408">freshness check</text></g><g data-edge-from="mongo" data-edge-to="cra"><path class="wire" d="M427.0 726.0 L427.0 781.0"/><path class="wire-a" d="M427.0 726.0 L427.0 781.0"/><text class="wlab" x="434" y="752">the column contract</text></g><g id="f1-nd-launchd" data-node="launchd" role="graphics-symbol" aria-label="launchd — daily 03:10 · hourly :05 · watchdog 07:00 — built with plist · local time"><rect class="nd nd-external" x="320" y="30" width="215" height="66" rx="3"/><text class="ndl" x="330" y="51">launchd</text><text class="nds" x="330" y="65">daily 03:10 · hourly :05 · watchdog 07:00</text><text class="ndt" x="330" y="79">[plist · local time]</text></g><g id="f1-nd-daily" data-node="daily" role="graphics-symbol" aria-label="bin/run_daily.py — spot + perp + weekly + CSV — built with Python 3.12"><rect class="nd nd-service" x="93" y="156" width="193" height="66" rx="3"/><text class="ndl" x="104" y="177">bin/run_daily.py</text><text class="nds" x="104" y="191">spot + perp + weekly + CSV</text><text class="ndt" x="104" y="205">[Python 3.12]</text></g><g id="f1-nd-hourly" data-node="hourly" role="graphics-symbol" aria-label="bin/run_hourly.py — 17 tokens 1h · closes daily bars — built with Python 3.12"><rect class="nd nd-service" x="316" y="156" width="215" height="66" rx="3"/><text class="ndl" x="327" y="177">bin/run_hourly.py</text><text class="nds" x="327" y="191">17 tokens 1h · closes daily bars</text><text class="ndt" x="327" y="205">[Python 3.12]</text></g><g id="f1-nd-watchdog" data-node="watchdog" role="graphics-symbol" aria-label="bin/run_watchdog.py — freshness of 85 collections — built with Python 3.12"><rect class="nd nd-service" x="561" y="156" width="200" height="66" rx="3"/><text class="ndl" x="572" y="177">bin/run_watchdog.py</text><text class="nds" x="572" y="191">freshness of 85 collections</text><text class="ndt" x="572" y="205">[Python 3.12]</text></g><g id="f1-nd-pipeline" data-node="pipeline" role="graphics-symbol" aria-label="pipeline.py — orchestration · per-token isolation — built with pandas"><rect class="nd nd-module" x="320" y="282" width="215" height="66" rx="3"/><text class="ndl" x="330" y="303">pipeline.py</text><text class="nds" x="330" y="317">orchestration · per-token isolation</text><text class="ndt" x="330" y="331">[pandas]</text></g><g id="f1-nd-extract" data-node="extract" role="graphics-symbol" aria-label="extract.py — spot candles · 429 backoff — built with ccxt 4.5.40"><rect class="nd nd-module" x="40" y="408" width="193" height="66" rx="3"/><text class="ndl" x="52" y="429">extract.py</text><text class="nds" x="52" y="443">spot candles · 429 backoff</text><text class="ndt" x="52" y="457">[ccxt 4.5.40]</text></g><g id="f1-nd-perp" data-node="perp" role="graphics-symbol" aria-label="extract_perp.py — perp candles + funding — built with ccxt.kucoinfutures"><rect class="nd nd-module" x="264" y="408" width="167" height="66" rx="3"/><text class="ndl" x="274" y="429">extract_perp.py</text><text class="nds" x="274" y="443">perp candles + funding</text><text class="ndt" x="274" y="457">[ccxt.kucoinfutures]</text></g><g id="f1-nd-sentiment" data-node="sentiment" role="graphics-symbol" aria-label="sentiment.py — Fear &amp; Greed — built with requests"><rect class="nd nd-module" x="460" y="408" width="108" height="66" rx="3"/><text class="ndl" x="472" y="429">sentiment.py</text><text class="nds" x="472" y="443">Fear &amp; Greed</text><text class="ndt" x="472" y="457">[requests]</text></g><g id="f1-nd-indicators" data-node="indicators" role="graphics-symbol" aria-label="indicators.py — ~85 indicators · single source — built with pandas-ta-classic"><rect class="nd nd-module" x="598" y="408" width="215" height="66" rx="3"/><text class="ndl" x="610" y="429">indicators.py</text><text class="nds" x="610" y="443">~85 indicators · single source</text><text class="ndt" x="610" y="457">[pandas-ta-classic]</text></g><g id="f1-nd-db" data-node="db" role="graphics-symbol" aria-label="db.py — bulk upsert · unique on timestamp — built with pymongo"><rect class="nd nd-module" x="24" y="534" width="215" height="66" rx="3"/><text class="ndl" x="35" y="555">db.py</text><text class="nds" x="35" y="569">bulk upsert · unique on timestamp</text><text class="ndt" x="35" y="583">[pymongo]</text></g><g id="f1-nd-spot_api" data-node="spot_api" role="graphics-symbol" aria-label="KuCoin spot — public endpoints, no key — built with REST"><rect class="nd nd-external" x="269" y="534" width="180" height="66" rx="3"/><text class="ndl" x="280" y="555">KuCoin spot</text><text class="nds" x="280" y="569">public endpoints, no key</text><text class="ndt" x="280" y="583">[REST]</text></g><g id="f1-nd-perp_api" data-node="perp_api" role="graphics-symbol" aria-label="KuCoin Futures — ~2-day funding dead zone — built with REST"><rect class="nd nd-external" x="479" y="534" width="180" height="66" rx="3"/><text class="ndl" x="490" y="555">KuCoin Futures</text><text class="nds" x="490" y="569">~2-day funding dead zone</text><text class="ndt" x="490" y="583">[REST]</text></g><g id="f1-nd-fng" data-node="fng" role="graphics-symbol" aria-label="alternative.me — Fear &amp; Greed Index — built with REST"><rect class="nd nd-external" x="689" y="534" width="141" height="66" rx="3"/><text class="ndl" x="700" y="555">alternative.me</text><text class="nds" x="700" y="569">Fear &amp; Greed Index</text><text class="ndt" x="700" y="583">[REST]</text></g><g id="f1-nd-mongo" data-node="mongo" role="graphics-symbol" aria-label="MongoDB — ~110 collections · btc_data — built with MongoDB 7 · Docker"><rect class="nd nd-store" x="327" y="660" width="200" height="66" rx="3"/><text class="ndl" x="338" y="681">MongoDB</text><text class="nds" x="338" y="695">~110 collections · btc_data</text><text class="ndt" x="338" y="709">[MongoDB 7 · Docker]</text></g><g id="f1-nd-cra" data-node="cra" role="graphics-symbol" aria-label="Crypto_Research_Assistant — reads, never writes — built with Python 3.12"><rect class="nd nd-external" x="334" y="786" width="186" height="66" rx="3"/><text class="ndl" x="345" y="807">Crypto_Research_Assistant</text><text class="nds" x="345" y="821">reads, never writes</text><text class="ndt" x="345" y="835">[Python 3.12]</text></g></svg><div class="legend"><span class="lgi"><span class="lgs lgs-external" aria-hidden="true"></span>something you do not control</span><span class="lgi"><span class="lgs lgs-service" aria-hidden="true"></span>a process or entry point</span><span class="lgi"><span class="lgs lgs-module" aria-hidden="true"></span>code in this repo</span><span class="lgi"><span class="lgs lgs-store" aria-hidden="true"></span>a database, table, queue or bucket</span></div><table class="sr-only"><caption>Three launchd jobs, one shared pipeline, and the collections every downstream repo reads. — text alternative</caption><thead><tr><th>Component</th><th>Kind</th><th>Role</th><th>Connects to</th></tr></thead><tbody><tr><td>launchd</td><td>something you do not control</td><td>daily 03:10 · hourly :05 · watchdog 07:00</td><td>bin/run_daily.py; bin/run_hourly.py; bin/run_watchdog.py</td></tr><tr><td>bin/run_daily.py</td><td>a process or entry point</td><td>spot + perp + weekly + CSV</td><td>pipeline.py</td></tr><tr><td>bin/run_hourly.py</td><td>a process or entry point</td><td>17 tokens 1h · closes daily bars</td><td>pipeline.py</td></tr><tr><td>bin/run_watchdog.py</td><td>a process or entry point</td><td>freshness of 85 collections</td><td>MongoDB (freshness check)</td></tr><tr><td>pipeline.py</td><td>code in this repo</td><td>orchestration · per-token isolation</td><td>extract.py; extract_perp.py; sentiment.py; indicators.py (compute_all())</td></tr><tr><td>extract.py</td><td>code in this repo</td><td>spot candles · 429 backoff</td><td>KuCoin spot (OHLCV)</td></tr><tr><td>extract_perp.py</td><td>code in this repo</td><td>perp candles + funding</td><td>KuCoin Futures (OHLCV + funding)</td></tr><tr><td>sentiment.py</td><td>code in this repo</td><td>Fear &amp; Greed</td><td>alternative.me</td></tr><tr><td>indicators.py</td><td>code in this repo</td><td>~85 indicators · single source</td><td>db.py</td></tr><tr><td>db.py</td><td>code in this repo</td><td>bulk upsert · unique on timestamp</td><td>MongoDB (upsert closed bars only)</td></tr><tr><td>KuCoin spot</td><td>something you do not control</td><td>public endpoints, no key</td><td>—</td></tr><tr><td>KuCoin Futures</td><td>something you do not control</td><td>~2-day funding dead zone</td><td>—</td></tr><tr><td>alternative.me</td><td>something you do not control</td><td>Fear &amp; Greed Index</td><td>—</td></tr><tr><td>MongoDB</td><td>a database, table, queue or bucket</td><td>~110 collections · btc_data</td><td>Crypto_Research_Assistant (the column contract)</td></tr><tr><td>Crypto_Research_Assistant</td><td>something you do not control</td><td>reads, never writes</td><td>—</td></tr></tbody></table><div class="figcap">Three launchd jobs, one shared pipeline, and the collections every downstream repo reads.</div></div>
 <p><strong>Only closed candles are written.</strong> <code>run_update</code> bounds its window by <code>_last_closed_period()</code>; before 2026-07-19 it stored the forming candle and the gap check then skipped it forever. Indicator column names are a public API — renaming one is a cross-repo change (<a href="../../docs/decisions/001-indicator-columns-as-public-api.md">ADR-001</a>).</p>
 <h2 id="data-pipeline">Data Pipeline</h2>
 <p>All tokens share the same pipeline pattern (orchestrated by <code>pipeline.py</code>):</p>
@@ -104,7 +226,7 @@ button.pz:hover{border-color:var(--accent)}
 <ul><li>Database: <code>btc_data</code> (production), <code>btc_data_test</code> (testing)</li><li><strong>Spot:</strong> <code>{token}_daily_price_data</code>, <code>{token}_weekly_price_data</code>, <code>{token}_1h_price_data</code> — 17 each. Newer tokens (SUI/WIF) have partial indicators (SMA_200/EMA_200 null until ~200 weeks history).</li><li><strong>Perp:</strong> <code>{token}_perp_daily_price_data</code>, <code>{token}_perp_1h_price_data</code> — 18 each. No weekly (KuCoin Futures limitation). Perp 1h limited to ~15 months by exchange.</li><li><strong>Funding:</strong> <code>{token}_funding_rate_data</code> — 17 collections, raw 8h granularity.</li><li>Each document keyed by <code>timestamp</code> (UTC); unique index enforced.</li><li><code>indicator_glossary</code> collection: auto-synced every pipeline run.</li><li><code>funding_rate_glossary</code>: per-token metadata (exchange, contract symbol, settlement schedule).</li><li><strong>Production timeframes:</strong> daily + weekly + hourly (17 tokens, spot + perp). 4h not in production.</li><li><strong>Total:</strong> ~110 collections.</li></ul>
 <p>Ecosystem collection naming contract: <a href="../docs/shared/mongodb_contract.md">../docs/shared/mongodb_contract.md</a></p>
 <h2 id="key-modules-btc-tracker-mongodb">Key Modules (<code>btc_tracker_mongodb/</code>)</h2>
-<div class="tw"><table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody><tr><td><code>config.py</code></td><td>TOKENS (18), TIMEFRAMES, MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping</td></tr><tr><td><code>db.py</code></td><td>MongoDB CRUD. All functions accept <code>market_type="spot"</code> param. Full funding CRUD.</td></tr><tr><td><code>extract.py</code></td><td>KuCoin <strong>spot</strong> CCXT: <code>fetch_candles</code> (429 retry/backoff), <code>fetch_seed_candles</code></td></tr><tr><td><code>extract_perp.py</code></td><td>KuCoin <strong>Futures</strong> via <code>ccxt.kucoinfutures</code>: perp candles, funding rate history</td></tr><tr><td><code>indicators.py</code></td><td>Single source of truth for ~85 indicators: <code>compute_all()</code>, <code>INDICATOR_GLOSSARY</code></td></tr><tr><td><code>sentiment.py</code></td><td>Fear &amp; Greed Index fetcher with graceful fallback</td></tr><tr><td><code>pipeline.py</code></td><td>Orchestration: spot + perp seed/update/backfill <code>_all</code> variants. Per-token error isolation.</td></tr><tr><td><code>query.py</code></td><td>Debug: symbol/timeframe/test flags, <code>--compare</code>, <code>--glossary</code> modes</td></tr></tbody></table></div>
+<div class="tw"><table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody><tr><td><code>config.py</code></td><td>TOKENS (17), TIMEFRAMES, MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping</td></tr><tr><td><code>db.py</code></td><td>MongoDB CRUD. All functions accept <code>market_type="spot"</code> param. Full funding CRUD.</td></tr><tr><td><code>extract.py</code></td><td>KuCoin <strong>spot</strong> CCXT: <code>fetch_candles</code> (429 retry/backoff), <code>fetch_seed_candles</code></td></tr><tr><td><code>extract_perp.py</code></td><td>KuCoin <strong>Futures</strong> via <code>ccxt.kucoinfutures</code>: perp candles, funding rate history</td></tr><tr><td><code>indicators.py</code></td><td>Single source of truth for ~85 indicators: <code>compute_all()</code>, <code>INDICATOR_GLOSSARY</code></td></tr><tr><td><code>sentiment.py</code></td><td>Fear &amp; Greed Index fetcher with graceful fallback</td></tr><tr><td><code>pipeline.py</code></td><td>Orchestration: spot + perp seed/update/backfill <code>_all</code> variants. Per-token error isolation.</td></tr><tr><td><code>query.py</code></td><td>Debug: symbol/timeframe/test flags, <code>--compare</code>, <code>--glossary</code> modes</td></tr></tbody></table></div>
 <h2 id="technical-indicators-85">Technical Indicators (~85)</h2>
 <p>Computed by <code>indicators.py</code> using <code>pandas-ta-classic</code>. Categories: Trend (SMA/EMA/Ichimoku/ADX/Supertrend/PSAR/Aroon), Momentum (RSI/StochRSI/MACD/Williams%R/CCI), Volume (OBV/CMF/MFI), Volatility (BB/Donchian/ATR/Squeeze), Risk (VaR/CVaR/Omega/Ulcer), ML Features (Z-scores/slopes/candle ratios), Sentiment (Fear &amp; Greed).</p>
 <p>Full list: <a href="INDICATORS.md">docs/INDICATORS.md</a>.</p>
@@ -127,20 +249,131 @@ python export_data.py --dry-run</code></pre>
 <footer>
   <span>GENERATED FROM DOCS/ARCHITECTURE.MD — DO NOT EDIT THIS FILE</span>
   <span>STRUCTURE ONLY, NO RUNTIME STATE</span>
-  <button class="pz" id="pz" aria-pressed="false">&#9208; PAUSE</button>
+  <a href="https://claude.ai/code/artifact/64858b08-77c5-4a12-92d9-43988e8c6a5a">CANONICAL COPY</a>
+  <span class="spacer"></span>
+  <button class="pz" id="th" type="button">&#9681; LIGHT</button>
+  <button class="pz" id="pz" type="button" aria-pressed="false">&#9208; PAUSE</button>
 </footer>
 </div>
 <script>
 (function(){
+  var doc=document.documentElement;
+  /* One iteration helper. NodeList.forEach and Array.prototype.forEach.call were
+     both in use here; picking one keeps the intent obvious. */
+  function each(xs,fn){Array.prototype.forEach.call(xs,fn);}
+
+  /* theme toggle */
+  var t=document.getElementById('th');
+  function paint(){
+    var light=doc.getAttribute('data-theme')==='light';
+    t.textContent=light?'\u25D1 DARK':'\u25D1 LIGHT';
+    t.setAttribute('aria-label',light?'Switch to dark theme':'Switch to light theme');
+  }
+  paint();
+  t.addEventListener('click',function(){
+    var next=doc.getAttribute('data-theme')==='light'?'dark':'light';
+    doc.setAttribute('data-theme',next);
+    try{localStorage.setItem('arch-theme',next);}catch(e){}
+    paint();
+  });
+
+  /* pause. The animation is CSS keyframes, so a class is the whole mechanism.
+     The SVG animation-pause API this used to call drives SMIL, which no diagram
+     on this page uses — it was a no-op dressed up as a feature. */
   var b=document.getElementById('pz'),p=false;
   b.addEventListener('click',function(){
     p=!p;document.body.classList.toggle('paused',p);
     b.setAttribute('aria-pressed',String(p));
     b.textContent=p?'\u25B6 RESUME':'\u23F8 PAUSE';
-    Array.prototype.forEach.call(document.querySelectorAll('svg'),function(s){
-      if(p&&s.pauseAnimations)s.pauseAnimations();
-      if(!p&&s.unpauseAnimations)s.unpauseAnimations();
+  });
+
+  /* flow walker */
+  each(document.querySelectorAll('.flowctl'),function(ctl){
+    var svg=document.getElementById(ctl.getAttribute('data-view'));
+    if(!svg) return;
+    var flows;
+    try{flows=JSON.parse(ctl.getAttribute('data-flows'));}catch(e){return;}
+    if(!flows||!flows.length) return;
+
+    var list=ctl.querySelector('.flowlist'),
+        cap=ctl.querySelector('[data-flow-cap]'),
+        pos=ctl.querySelector('[data-flow-pos]'),
+        prev=ctl.querySelector('[data-flow-prev]'),
+        next=ctl.querySelector('[data-flow-next]'),
+        clear=ctl.querySelector('[data-flow-clear]'),
+        cur=-1,step=0;
+
+    function marks(){
+      each(svg.querySelectorAll('.on-path,.at-step'),function(el){
+        el.classList.remove('on-path','at-step');
+        el.removeAttribute('aria-current');
+      });
+    }
+    function q(v){return typeof CSS!=='undefined'&&CSS.escape?CSS.escape(v):v;}
+    function find(s){
+      return s.t==='node'
+        ? svg.querySelector('[data-node="'+q(s.k)+'"]')
+        : svg.querySelector('[data-edge-from="'+q(s.f)+'"][data-edge-to="'+q(s.to)+'"]');
+    }
+    function draw(){
+      marks();
+      if(cur<0){
+        svg.classList.remove('flowing');
+        each(list.querySelectorAll('li'),function(li){li.setAttribute('aria-selected','false');});
+        cap.textContent='Select a flow to trace it through the diagram.';
+        pos.textContent='\u2014';
+        prev.disabled=next.disabled=true;
+        return;
+      }
+      var f=flows[cur];
+      svg.classList.add('flowing');
+      each(list.querySelectorAll('li'),function(li,k){
+        li.setAttribute('aria-selected',String(k===cur));
+      });
+      each(f.steps,function(s){
+        var el=find(s); if(el) el.classList.add('on-path');
+      });
+      var at=f.steps[step],el=at&&find(at);
+      if(el){el.classList.add('at-step');el.setAttribute('aria-current','step');}
+      pos.textContent='step '+(step+1)+' / '+f.steps.length;
+      /* One whole-text write, not an append — partial updates get dropped. */
+      cap.textContent=(at&&at.note)?at.note:f.label;
+      prev.disabled=step<=0;
+      next.disabled=step>=f.steps.length-1;
+      try{
+        history.replaceState(null,'','#flow='+encodeURIComponent(f.id)+'&step='+(step+1));
+      }catch(e){}
+    }
+    function pick(k,s){cur=k;step=s||0;draw();}
+
+    list.addEventListener('click',function(e){
+      var li=e.target.closest('li'); if(!li) return;
+      pick(Array.prototype.indexOf.call(list.children,li),0);
     });
+    list.addEventListener('keydown',function(e){
+      var k=e.key;
+      if(k==='ArrowDown'||k==='ArrowRight'){e.preventDefault();pick(Math.min((cur<0?-1:cur)+1,flows.length-1),0);}
+      else if(k==='ArrowUp'||k==='ArrowLeft'){e.preventDefault();pick(Math.max((cur<0?flows.length:cur)-1,0),0);}
+      else if(k==='Home'){e.preventDefault();pick(0,0);}
+      else if(k==='End'){e.preventDefault();pick(flows.length-1,0);}
+      else if(k==='Escape'){e.preventDefault();cur=-1;draw();}
+    });
+    prev.addEventListener('click',function(){if(step>0){step--;draw();}});
+    next.addEventListener('click',function(){if(cur>=0&&step<flows[cur].steps.length-1){step++;draw();}});
+    clear.addEventListener('click',function(){cur=-1;draw();});
+
+    function fromHash(){
+      var m=/flow=([^&]+)(?:&step=(\d+))?/.exec(location.hash||'');
+      if(!m) return false;
+      var id=decodeURIComponent(m[1]),k=-1;
+      each(flows,function(f,j){if(f.id===id)k=j;});
+      if(k<0) return false;                       /* unknown id: stay neutral */
+      var s=Math.max(0,Math.min((parseInt(m[2],10)||1)-1,flows[k].steps.length-1));
+      pick(k,s);
+      return true;
+    }
+    window.addEventListener('hashchange',fromHash);
+    if(!fromHash()) draw();
   });
 })();
 </script>

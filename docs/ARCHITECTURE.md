@@ -5,6 +5,7 @@ created: 2026-04-19
 last_reviewed_on: 2026-05-30
 review_in: 6 months
 applies_to: btc_price_tracker
+published_url: https://claude.ai/code/artifact/64858b08-77c5-4a12-92d9-43988e8c6a5a
 ---
 
 # Architecture
@@ -99,7 +100,7 @@ Ecosystem collection naming contract: [../docs/shared/mongodb_contract.md](../do
 
 | File | Purpose |
 |---|---|
-| `config.py` | TOKENS (18), TIMEFRAMES, MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping |
+| `config.py` | TOKENS (17), TIMEFRAMES, MARKET_TYPES, PERP_SYMBOL_MAP, DB names, collection name mapping |
 | `db.py` | MongoDB CRUD. All functions accept `market_type="spot"` param. Full funding CRUD. |
 | `extract.py` | KuCoin **spot** CCXT: `fetch_candles` (429 retry/backoff), `fetch_seed_candles` |
 | `extract_perp.py` | KuCoin **Futures** via `ccxt.kucoinfutures`: perp candles, funding rate history |
