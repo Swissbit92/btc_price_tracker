@@ -10,6 +10,39 @@ published_url: https://claude.ai/code/artifact/64858b08-77c5-4a12-92d9-43988e8c6
 
 # Architecture
 
+```archstat
+[
+  {
+    "label": "Tokens",
+    "value": "17",
+    "note": "spot + perp"
+  },
+  {
+    "label": "Indicators",
+    "value": "85",
+    "note": "public API",
+    "state": "warn"
+  },
+  {
+    "label": "Writes",
+    "value": "Owner",
+    "note": "price collections",
+    "state": "bad"
+  },
+  {
+    "label": "Closed bars",
+    "value": "Only",
+    "note": "since 2026-07-19",
+    "state": "ok"
+  },
+  {
+    "label": "Cadence",
+    "value": "03:10",
+    "note": "+ hourly :05"
+  }
+]
+```
+
 ## Topology
 
 ```archview

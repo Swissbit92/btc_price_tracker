@@ -4,6 +4,37 @@ Generated from docs/ARCHITECTURE.md. The rendered page is the same content with 
 
 # Architecture
 
+[
+  {
+    "label": "Tokens",
+    "value": "17",
+    "note": "spot + perp"
+  },
+  {
+    "label": "Indicators",
+    "value": "85",
+    "note": "public API",
+    "state": "warn"
+  },
+  {
+    "label": "Writes",
+    "value": "Owner",
+    "note": "price collections",
+    "state": "bad"
+  },
+  {
+    "label": "Closed bars",
+    "value": "Only",
+    "note": "since 2026-07-19",
+    "state": "ok"
+  },
+  {
+    "label": "Cadence",
+    "value": "03:10",
+    "note": "+ hourly :05"
+  }
+]
+
 ## Topology
 
 [diagram] Three launchd jobs, one shared pipeline, and the collections every downstream repo reads.
