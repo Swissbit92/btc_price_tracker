@@ -60,33 +60,109 @@ renaming one is a cross-repo change ([ADR-001](../../docs/decisions/001-indicato
 
 ## Data Pipeline
 
-All tokens share the same pipeline pattern (orchestrated by `pipeline.py`):
-1. **Load** the last 200 rows from MongoDB as a sliding window
-2. **Detect gaps** between the latest stored timestamp and now
-3. **Fetch missing candles** from KuCoin via CCXT (`extract.py`)
-4. **Append** new candles to the sliding window DataFrame
-5. **Recompute all indicators** via `indicators.compute_all()` (single source of truth)
-6. **Fetch Fear & Greed Index** from alternative.me API (`sentiment.py`)
-7. **Bulk upsert** only newly fetched rows into MongoDB, skipping any with NaN indicators
+Every token and timeframe runs the same seven steps, orchestrated by
+`pipeline.py`. Pick a flow to walk it.
+
+```archview
+{
+  "id": "pipeline",
+  "caption": "One incremental run, for one token and one timeframe.",
+  "nodes": [
+    {"id": "load", "label": "Load window", "sub": "last 200 rows", "kind": "store"},
+    {"id": "gaps", "label": "Detect gaps", "sub": "newest stored vs now", "kind": "module"},
+    {"id": "fetch", "label": "Fetch candles", "sub": "KuCoin via CCXT", "kind": "external"},
+    {"id": "append", "label": "Append", "sub": "onto the window", "kind": "module"},
+    {"id": "indicators", "label": "Recompute indicators", "sub": "compute_all", "kind": "module"},
+    {"id": "fng", "label": "Fear and Greed", "sub": "alternative.me", "kind": "external"},
+    {"id": "upsert", "label": "Bulk upsert", "sub": "new rows only", "kind": "store"}
+  ],
+  "edges": [
+    {"from": "load", "to": "gaps"},
+    {"from": "gaps", "to": "fetch"},
+    {"from": "fetch", "to": "append"},
+    {"from": "append", "to": "indicators"},
+    {"from": "indicators", "to": "fng"},
+    {"from": "fng", "to": "upsert"}
+  ]
+}
+```
+
+```archflow
+{
+  "view": "pipeline",
+  "flows": [
+    {
+      "id": "incremental",
+      "label": "An incremental run",
+      "steps": [
+        {"node": "load", "note": "The last 200 rows come back as a sliding window — enough for every indicator's warmup without loading the whole collection."},
+        {"node": "gaps", "note": "The newest stored timestamp is compared against now. Only the difference has to be fetched; everything else is already correct."},
+        {"node": "fetch", "note": "Missing candles are pulled from KuCoin via CCXT (extract.py), bounded by _last_closed_period() so a forming candle is never stored."},
+        {"node": "append", "note": "New candles join the window DataFrame. Nothing is written yet."},
+        {"node": "indicators", "note": "indicators.compute_all() recomputes every column over the window. It is the single source of truth — no other code may produce an indicator."},
+        {"node": "fng", "note": "The Fear & Greed Index is fetched separately from alternative.me (sentiment.py), so a failure here does not cost you the candles."},
+        {"node": "upsert", "note": "Only the newly fetched rows are upserted, and any row still holding a NaN indicator is skipped rather than stored incomplete."}
+      ]
+    }
+  ]
+}
+```
 
 ## Deep Historical Backfill (`backfill.py`)
 
-One-time operation to fetch max available history from KuCoin:
-1. **Determine start date** — Oct 2017 for daily, Jan 2020 for 4h/1h (override via `--since`)
-2. **Fetch all candles** from KuCoin in paginated batches
-3. **Load existing data** from MongoDB (OHLCV only via `load_all()`)
-4. **Merge** — deduplicate on timestamp, existing OHLCV wins on conflicts
-5. **Recompute all indicators** on the full merged dataset
-6. **Drop NaN warmup rows**, set FnG to None
-7. **Chunked upsert** via `bulk_upsert_chunked()` (5K-doc batches)
+A one-time operation to pull the maximum history KuCoin will give. Safe to
+re-run — upsert semantics, per-token error isolation, resumable.
 
-Safe to re-run (upsert semantics), per-token error isolation, resumable.
+```archview
+{
+  "id": "backfill",
+  "caption": "The one-time deep fetch. Existing rows win every collision.",
+  "nodes": [
+    {"id": "since", "label": "Determine start", "sub": "Oct 2017 daily, Jan 2020 intraday", "kind": "module"},
+    {"id": "pull", "label": "Fetch all candles", "sub": "paginated batches", "kind": "external"},
+    {"id": "existing", "label": "Load existing", "sub": "OHLCV only", "kind": "store"},
+    {"id": "merge", "label": "Merge", "sub": "existing wins on conflict", "kind": "module"},
+    {"id": "recompute", "label": "Recompute indicators", "sub": "over the full set", "kind": "module"},
+    {"id": "warmup", "label": "Drop warmup rows", "sub": "NaN out, FnG null", "kind": "module"},
+    {"id": "chunk", "label": "Chunked upsert", "sub": "5K-doc batches", "kind": "store"}
+  ],
+  "edges": [
+    {"from": "since", "to": "pull"},
+    {"from": "pull", "to": "existing"},
+    {"from": "existing", "to": "merge"},
+    {"from": "merge", "to": "recompute"},
+    {"from": "recompute", "to": "warmup"},
+    {"from": "warmup", "to": "chunk"}
+  ]
+}
+```
+
+```archflow
+{
+  "view": "backfill",
+  "flows": [
+    {
+      "id": "deep",
+      "label": "A deep backfill",
+      "steps": [
+        {"node": "since", "note": "Oct 2017 for daily, Jan 2020 for 4h/1h, or whatever --since says."},
+        {"node": "pull", "note": "Everything from that date is fetched in paginated batches."},
+        {"node": "existing", "note": "What is already stored is loaded — OHLCV only, via load_all()."},
+        {"node": "merge", "note": "Deduplicated on timestamp, and existing OHLCV wins every conflict. This is why backfill CANNOT repair the pre-2026-07-19 truncated closes — it keeps the wrong row."},
+        {"node": "recompute", "note": "Indicators are recomputed across the whole merged dataset, not just the new part."},
+        {"node": "warmup", "note": "Rows whose indicators never warmed up are dropped, and Fear & Greed is set to None for history it does not cover."},
+        {"node": "chunk", "note": "Written in 5K-document batches via bulk_upsert_chunked() so a large token cannot blow up the write."}
+      ]
+    }
+  ]
+}
+```
 
 ## MongoDB Schema
 
 - Database: `btc_data` (production), `btc_data_test` (testing)
 - **Spot:** `{token}_daily_price_data`, `{token}_weekly_price_data`, `{token}_1h_price_data` — 17 each. Newer tokens (SUI/WIF) have partial indicators (SMA_200/EMA_200 null until ~200 weeks history).
-- **Perp:** `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data` — 18 each. No weekly (KuCoin Futures limitation). Perp 1h limited to ~15 months by exchange.
+- **Perp:** `{token}_perp_daily_price_data`, `{token}_perp_1h_price_data` — 17 each. No weekly (KuCoin Futures limitation). Perp 1h limited to ~15 months by exchange.
 - **Funding:** `{token}_funding_rate_data` — 17 collections, raw 8h granularity.
 - Each document keyed by `timestamp` (UTC); unique index enforced.
 - `indicator_glossary` collection: auto-synced every pipeline run.
