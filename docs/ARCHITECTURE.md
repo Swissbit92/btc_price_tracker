@@ -250,7 +250,147 @@ published_url: https://claude.ai/code/artifact/64858b08-77c5-4a12-92d9-43988e8c6
 
 **Only closed candles are written.** `run_update` bounds its window by
 `_last_closed_period()`; before 2026-07-19 it stored the forming candle and the
-gap check then skipped it forever. Indicator column names are a public API —
+gap check then skipped it forever.
+
+```archplot
+{
+  "id": "truncated",
+  "schematic": true,
+  "height": 250,
+  "xlabel": "one daily period →",
+  "alt": "An intraday price, the moment the row was written, and the gap between the close it recorded and the real one",
+  "caption": "The row was written before the period ended, so the Close it stored was a mid-bar price — everything after the red line was thrown away. The gap check then saw a row already present and never came back, which is why the error was silent, and why `backfill.py` cannot repair it: existing rows win every collision.",
+  "series": [
+    {
+      "label": "price",
+      "tone": "ink",
+      "points": [
+        100.02,
+        100.3,
+        100.09,
+        100.31,
+        100.25,
+        100.19,
+        100.61,
+        100.65,
+        100.64,
+        100.8,
+        101.05,
+        101.04,
+        101.17,
+        100.95,
+        100.87,
+        100.78,
+        100.48,
+        100.15,
+        99.79,
+        99.74,
+        99.7,
+        99.63,
+        99.65,
+        99.36,
+        99.34,
+        99.39,
+        99.56,
+        99.37,
+        99.28,
+        98.84,
+        98.73,
+        98.24,
+        97.93,
+        98.17,
+        97.69,
+        97.87,
+        97.94,
+        97.87,
+        97.97,
+        98.09,
+        98.32,
+        98.26,
+        98.13,
+        98.0,
+        97.78,
+        97.77,
+        97.6,
+        97.84,
+        97.43,
+        97.19,
+        96.98,
+        96.51,
+        96.93,
+        96.4,
+        96.34,
+        96.23,
+        96.59,
+        96.15,
+        96.39,
+        96.23,
+        96.19,
+        96.05,
+        96.19,
+        95.94,
+        95.92,
+        96.0,
+        96.4,
+        95.87,
+        96.21,
+        96.42,
+        96.31,
+        96.38,
+        96.28,
+        96.64,
+        96.68,
+        96.64,
+        96.59,
+        96.54,
+        96.5,
+        95.89,
+        95.92,
+        95.08,
+        93.87,
+        93.42,
+        92.97,
+        92.63,
+        92.17,
+        91.71,
+        91.37,
+        91.16,
+        90.64,
+        90.14,
+        90.15,
+        89.84,
+        89.21,
+        89.3
+      ]
+    }
+  ],
+  "thresholds": [
+    {
+      "value": 96.5,
+      "label": "Close, recorded",
+      "tone": "bad"
+    },
+    {
+      "value": 89.3,
+      "label": "Close, actual",
+      "tone": "good"
+    }
+  ],
+  "marks": [
+    {
+      "at": 78,
+      "label": "row written",
+      "tone": "bad"
+    },
+    {
+      "at": 95,
+      "label": "period closes",
+      "tone": "good"
+    }
+  ]
+}
+```
+ Indicator column names are a public API —
 renaming one is a cross-repo change ([ADR-001](../../docs/decisions/001-indicator-columns-as-public-api.md)).
 
 ## Data Pipeline

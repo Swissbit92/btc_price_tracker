@@ -4,36 +4,11 @@ Generated from docs/ARCHITECTURE.md. The rendered page is the same content with 
 
 # Architecture
 
-[
-  {
-    "label": "Tokens",
-    "value": "17",
-    "note": "spot + perp"
-  },
-  {
-    "label": "Indicators",
-    "value": "85",
-    "note": "public API",
-    "state": "warn"
-  },
-  {
-    "label": "Writes",
-    "value": "Owner",
-    "note": "price collections",
-    "state": "bad"
-  },
-  {
-    "label": "Closed bars",
-    "value": "Only",
-    "note": "since 2026-07-19",
-    "state": "ok"
-  },
-  {
-    "label": "Cadence",
-    "value": "03:10",
-    "note": "+ hourly :05"
-  }
-]
+  - Tokens: 17 (spot + perp)
+  - Indicators: 85 (public API)
+  - Writes: Owner (price collections)
+  - Closed bars: Only (since 2026-07-19)
+  - Cadence: 03:10 (+ hourly :05)
 
 ## Topology
 
@@ -72,7 +47,14 @@ Generated from docs/ARCHITECTURE.md. The rendered page is the same content with 
 
 **Only closed candles are written.** `run_update` bounds its window by
 `_last_closed_period()`; before 2026-07-19 it stored the forming candle and the
-gap check then skipped it forever. Indicator column names are a public API —
+gap check then skipped it forever.
+
+[schematic] The row was written before the period ended, so the Close it stored was a mid-bar price — everything after the red line was thrown away. The gap check then saw a row already present and never came back, which is why the error was silent, and why `backfill.py` cannot repair it: existing rows win every collision.
+  - line: price
+  - threshold: Close, recorded at 96.5
+  - threshold: Close, actual at 89.3
+
+ Indicator column names are a public API —
 renaming one is a cross-repo change ([ADR-001](../../docs/decisions/001-indicator-columns-as-public-api.md)).
 
 ## Data Pipeline
