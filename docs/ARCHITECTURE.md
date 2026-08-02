@@ -49,39 +49,201 @@ published_url: https://claude.ai/code/artifact/64858b08-77c5-4a12-92d9-43988e8c6
 {
   "caption": "Three launchd jobs, one shared pipeline, and the collections every downstream repo reads.",
   "nodes": [
-    {"id":"launchd","label":"launchd","sub":"daily 03:10 · hourly :05 · watchdog 07:00","tech":"plist · local time","kind":"external"},
-    {"id":"daily","label":"bin/run_daily.py","sub":"spot + perp + weekly + CSV","tech":"Python 3.12","kind":"service"},
-    {"id":"hourly","label":"bin/run_hourly.py","sub":"17 tokens 1h · closes daily bars","tech":"Python 3.12","kind":"service"},
-    {"id":"watchdog","label":"bin/run_watchdog.py","sub":"freshness of 85 collections","tech":"Python 3.12","kind":"service"},
-    {"id":"pipeline","label":"pipeline.py","sub":"orchestration · per-token isolation","tech":"pandas","kind":"module"},
-    {"id":"extract","label":"extract.py","sub":"spot candles · 429 backoff","tech":"ccxt 4.5.40","kind":"module"},
-    {"id":"perp","label":"extract_perp.py","sub":"perp candles + funding","tech":"ccxt.kucoinfutures","kind":"module"},
-    {"id":"sentiment","label":"sentiment.py","sub":"Fear & Greed","tech":"requests","kind":"module"},
-    {"id":"indicators","label":"indicators.py","sub":"~85 indicators · single source","tech":"pandas-ta-classic","kind":"module"},
-    {"id":"db","label":"db.py","sub":"bulk upsert · unique on timestamp","tech":"pymongo","kind":"module"},
-    {"id":"spot_api","label":"KuCoin spot","sub":"public endpoints, no key","tech":"REST","kind":"external"},
-    {"id":"perp_api","label":"KuCoin Futures","sub":"~2-day funding dead zone","tech":"REST","kind":"external"},
-    {"id":"fng","label":"alternative.me","sub":"Fear & Greed Index","tech":"REST","kind":"external"},
-    {"id":"mongo","label":"MongoDB","sub":"~110 collections · btc_data","tech":"MongoDB 7 · Docker","kind":"store"},
-    {"id":"cra","label":"Crypto_Research_Assistant","sub":"reads, never writes","tech":"Python 3.12","kind":"external"}
+    {
+      "id": "launchd",
+      "label": "launchd",
+      "sub": "daily 03:10 \u00b7 hourly :05 \u00b7 watchdog 07:00",
+      "tech": "plist \u00b7 local time",
+      "kind": "external",
+      "note": "Fires all three jobs in machine local time. The daily moved to 03:10 because 01:10 sat on the wrong side of the UTC day boundary under CEST."
+    },
+    {
+      "id": "daily",
+      "label": "bin/run_daily.py",
+      "sub": "spot + perp + weekly + CSV",
+      "tech": "Python 3.12",
+      "kind": "service",
+      "note": "Spot, perp, weekly and the CSV export, once a day."
+    },
+    {
+      "id": "hourly",
+      "label": "bin/run_hourly.py",
+      "sub": "17 tokens 1h \u00b7 closes daily bars",
+      "tech": "Python 3.12",
+      "kind": "service",
+      "note": "The 1h bars \u2014 and it also closes the daily and weekly ones, so correctness no longer depends on the daily job firing."
+    },
+    {
+      "id": "watchdog",
+      "label": "bin/run_watchdog.py",
+      "sub": "freshness of 85 collections",
+      "tech": "Python 3.12",
+      "kind": "service",
+      "note": "Independent freshness check across 85 collections. It exists because a pipeline that stops silently looks exactly like one with nothing to do."
+    },
+    {
+      "id": "pipeline",
+      "label": "pipeline.py",
+      "sub": "orchestration \u00b7 per-token isolation",
+      "tech": "pandas",
+      "kind": "module",
+      "note": "Orchestrates one token at a time, isolated, so one bad symbol cannot take the run down."
+    },
+    {
+      "id": "extract",
+      "label": "extract.py",
+      "sub": "spot candles \u00b7 429 backoff",
+      "tech": "ccxt 4.5.40",
+      "kind": "module",
+      "note": "Spot candles via CCXT, retrying 429s \u2014 which KuCoin misreports as a generic exchange error."
+    },
+    {
+      "id": "perp",
+      "label": "extract_perp.py",
+      "sub": "perp candles + funding",
+      "tech": "ccxt.kucoinfutures",
+      "kind": "module",
+      "note": "Perp candles and funding. Funding has a roughly two-day dead zone at the recent end."
+    },
+    {
+      "id": "sentiment",
+      "label": "sentiment.py",
+      "sub": "Fear & Greed",
+      "tech": "requests",
+      "kind": "module",
+      "note": "Fetches the Fear and Greed index, separately, so its outage costs no candles."
+    },
+    {
+      "id": "indicators",
+      "label": "indicators.py",
+      "sub": "~85 indicators \u00b7 single source",
+      "tech": "pandas-ta-classic",
+      "kind": "module",
+      "note": "compute_all() is the single source of truth for every column. No other code may produce an indicator."
+    },
+    {
+      "id": "db",
+      "label": "db.py",
+      "sub": "bulk upsert \u00b7 unique on timestamp",
+      "tech": "pymongo",
+      "kind": "module",
+      "note": "Bulk upsert with a unique index on timestamp, which is what makes a re-run harmless."
+    },
+    {
+      "id": "spot_api",
+      "label": "KuCoin spot",
+      "sub": "public endpoints, no key",
+      "tech": "REST",
+      "kind": "external",
+      "note": "Public endpoints only \u2014 no key, no signing."
+    },
+    {
+      "id": "perp_api",
+      "label": "KuCoin Futures",
+      "sub": "~2-day funding dead zone",
+      "tech": "REST",
+      "kind": "external",
+      "note": "The futures venue, same story plus funding."
+    },
+    {
+      "id": "fng",
+      "label": "alternative.me",
+      "sub": "Fear & Greed Index",
+      "tech": "REST",
+      "kind": "external",
+      "note": "Fear and Greed comes from a separate API, so an outage there does not cost you the candles."
+    },
+    {
+      "id": "mongo",
+      "label": "MongoDB",
+      "sub": "~110 collections \u00b7 btc_data",
+      "tech": "MongoDB 7 \u00b7 Docker",
+      "kind": "store",
+      "note": "Around 110 collections. This repo is the only writer to the price ones."
+    },
+    {
+      "id": "cra",
+      "label": "Crypto_Research_Assistant",
+      "sub": "reads, never writes",
+      "tech": "Python 3.12",
+      "kind": "external",
+      "note": "Reads the columns this repo writes. That column list is the contract between them."
+    }
   ],
   "edges": [
-    {"from":"launchd","to":"daily","style":"static"},
-    {"from":"launchd","to":"hourly","style":"static"},
-    {"from":"launchd","to":"watchdog","style":"static"},
-    {"from":"daily","to":"pipeline"},
-    {"from":"hourly","to":"pipeline"},
-    {"from":"pipeline","to":"extract"},
-    {"from":"pipeline","to":"perp"},
-    {"from":"pipeline","to":"sentiment"},
-    {"from":"pipeline","to":"indicators","label":"compute_all()"},
-    {"from":"extract","to":"spot_api","label":"OHLCV"},
-    {"from":"perp","to":"perp_api","label":"OHLCV + funding"},
-    {"from":"sentiment","to":"fng"},
-    {"from":"indicators","to":"db"},
-    {"from":"db","to":"mongo","label":"upsert closed bars only"},
-    {"from":"watchdog","to":"mongo","label":"freshness check"},
-    {"from":"mongo","to":"cra","label":"the column contract"}
+    {
+      "from": "launchd",
+      "to": "daily",
+      "style": "static"
+    },
+    {
+      "from": "launchd",
+      "to": "hourly",
+      "style": "static"
+    },
+    {
+      "from": "launchd",
+      "to": "watchdog",
+      "style": "static"
+    },
+    {
+      "from": "daily",
+      "to": "pipeline"
+    },
+    {
+      "from": "hourly",
+      "to": "pipeline"
+    },
+    {
+      "from": "pipeline",
+      "to": "extract"
+    },
+    {
+      "from": "pipeline",
+      "to": "perp"
+    },
+    {
+      "from": "pipeline",
+      "to": "sentiment"
+    },
+    {
+      "from": "pipeline",
+      "to": "indicators",
+      "label": "compute_all()"
+    },
+    {
+      "from": "extract",
+      "to": "spot_api",
+      "label": "OHLCV"
+    },
+    {
+      "from": "perp",
+      "to": "perp_api",
+      "label": "OHLCV + funding"
+    },
+    {
+      "from": "sentiment",
+      "to": "fng"
+    },
+    {
+      "from": "indicators",
+      "to": "db"
+    },
+    {
+      "from": "db",
+      "to": "mongo",
+      "label": "upsert closed bars only"
+    },
+    {
+      "from": "watchdog",
+      "to": "mongo",
+      "label": "freshness check"
+    },
+    {
+      "from": "mongo",
+      "to": "cra",
+      "label": "the column contract"
+    }
   ]
 }
 ```
@@ -101,21 +263,81 @@ Every token and timeframe runs the same seven steps, orchestrated by
   "id": "pipeline",
   "caption": "One incremental run, for one token and one timeframe.",
   "nodes": [
-    {"id": "load", "label": "Load window", "sub": "last 200 rows", "kind": "store"},
-    {"id": "gaps", "label": "Detect gaps", "sub": "newest stored vs now", "kind": "module"},
-    {"id": "fetch", "label": "Fetch candles", "sub": "KuCoin via CCXT", "kind": "external"},
-    {"id": "append", "label": "Append", "sub": "onto the window", "kind": "module"},
-    {"id": "indicators", "label": "Recompute indicators", "sub": "compute_all", "kind": "module"},
-    {"id": "fng", "label": "Fear and Greed", "sub": "alternative.me", "kind": "external"},
-    {"id": "upsert", "label": "Bulk upsert", "sub": "new rows only", "kind": "store"}
+    {
+      "id": "load",
+      "label": "Load window",
+      "sub": "last 200 rows",
+      "kind": "store",
+      "note": "Pulls the last 200 rows as a sliding window \u2014 enough for every indicator's warmup without reading the whole collection."
+    },
+    {
+      "id": "gaps",
+      "label": "Detect gaps",
+      "sub": "newest stored vs now",
+      "kind": "module",
+      "note": "Compares the newest stored timestamp against now. Only the difference has to be fetched."
+    },
+    {
+      "id": "fetch",
+      "label": "Fetch candles",
+      "sub": "KuCoin via CCXT",
+      "kind": "external",
+      "note": "Pulls the missing candles, bounded by the last closed period so a forming candle is never stored."
+    },
+    {
+      "id": "append",
+      "label": "Append",
+      "sub": "onto the window",
+      "kind": "module",
+      "note": "New candles join the window in memory. Nothing is written yet."
+    },
+    {
+      "id": "indicators",
+      "label": "Recompute indicators",
+      "sub": "compute_all",
+      "kind": "module",
+      "note": "compute_all() is the single source of truth for every column. No other code may produce an indicator."
+    },
+    {
+      "id": "fng",
+      "label": "Fear and Greed",
+      "sub": "alternative.me",
+      "kind": "external",
+      "note": "Fear and Greed comes from a separate API, so an outage there does not cost you the candles."
+    },
+    {
+      "id": "upsert",
+      "label": "Bulk upsert",
+      "sub": "new rows only",
+      "kind": "store",
+      "note": "Writes only the new rows, and skips any still carrying a NaN rather than storing it incomplete."
+    }
   ],
   "edges": [
-    {"from": "load", "to": "gaps"},
-    {"from": "gaps", "to": "fetch"},
-    {"from": "fetch", "to": "append"},
-    {"from": "append", "to": "indicators"},
-    {"from": "indicators", "to": "fng"},
-    {"from": "fng", "to": "upsert"}
+    {
+      "from": "load",
+      "to": "gaps"
+    },
+    {
+      "from": "gaps",
+      "to": "fetch"
+    },
+    {
+      "from": "fetch",
+      "to": "append"
+    },
+    {
+      "from": "append",
+      "to": "indicators"
+    },
+    {
+      "from": "indicators",
+      "to": "fng"
+    },
+    {
+      "from": "fng",
+      "to": "upsert"
+    }
   ]
 }
 ```
@@ -151,21 +373,81 @@ re-run — upsert semantics, per-token error isolation, resumable.
   "id": "backfill",
   "caption": "The one-time deep fetch. Existing rows win every collision.",
   "nodes": [
-    {"id": "since", "label": "Determine start", "sub": "Oct 2017 daily, Jan 2020 intraday", "kind": "module"},
-    {"id": "pull", "label": "Fetch all candles", "sub": "paginated batches", "kind": "external"},
-    {"id": "existing", "label": "Load existing", "sub": "OHLCV only", "kind": "store"},
-    {"id": "merge", "label": "Merge", "sub": "existing wins on conflict", "kind": "module"},
-    {"id": "recompute", "label": "Recompute indicators", "sub": "over the full set", "kind": "module"},
-    {"id": "warmup", "label": "Drop warmup rows", "sub": "NaN out, FnG null", "kind": "module"},
-    {"id": "chunk", "label": "Chunked upsert", "sub": "5K-doc batches", "kind": "store"}
+    {
+      "id": "since",
+      "label": "Determine start",
+      "sub": "Oct 2017 daily, Jan 2020 intraday",
+      "kind": "module",
+      "note": "Oct 2017 for daily, Jan 2020 for intraday, or whatever --since says."
+    },
+    {
+      "id": "pull",
+      "label": "Fetch all candles",
+      "sub": "paginated batches",
+      "kind": "external",
+      "note": "Everything from that date, in paginated batches."
+    },
+    {
+      "id": "existing",
+      "label": "Load existing",
+      "sub": "OHLCV only",
+      "kind": "store",
+      "note": "Loads what is already stored \u2014 OHLCV only."
+    },
+    {
+      "id": "merge",
+      "label": "Merge",
+      "sub": "existing wins on conflict",
+      "kind": "module",
+      "note": "Existing rows win every collision. This is exactly why backfill cannot repair the pre-2026-07-19 truncated closes."
+    },
+    {
+      "id": "recompute",
+      "label": "Recompute indicators",
+      "sub": "over the full set",
+      "kind": "module",
+      "note": "Indicators are recomputed across the whole merged set, not just the new part."
+    },
+    {
+      "id": "warmup",
+      "label": "Drop warmup rows",
+      "sub": "NaN out, FnG null",
+      "kind": "module",
+      "note": "Rows whose indicators never warmed up are dropped rather than stored half-formed."
+    },
+    {
+      "id": "chunk",
+      "label": "Chunked upsert",
+      "sub": "5K-doc batches",
+      "kind": "store",
+      "note": "5K-document batches, so a large token cannot blow up the write."
+    }
   ],
   "edges": [
-    {"from": "since", "to": "pull"},
-    {"from": "pull", "to": "existing"},
-    {"from": "existing", "to": "merge"},
-    {"from": "merge", "to": "recompute"},
-    {"from": "recompute", "to": "warmup"},
-    {"from": "warmup", "to": "chunk"}
+    {
+      "from": "since",
+      "to": "pull"
+    },
+    {
+      "from": "pull",
+      "to": "existing"
+    },
+    {
+      "from": "existing",
+      "to": "merge"
+    },
+    {
+      "from": "merge",
+      "to": "recompute"
+    },
+    {
+      "from": "recompute",
+      "to": "warmup"
+    },
+    {
+      "from": "warmup",
+      "to": "chunk"
+    }
   ]
 }
 ```
