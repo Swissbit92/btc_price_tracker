@@ -544,3 +544,21 @@ python export_data.py                    # all tokens (auto Step 4 of daily pipe
 python export_data.py --tokens BTC,ETH
 python export_data.py --dry-run
 ```
+
+## Glossary
+
+The indicator names are a public API, so the vocabulary below is load-bearing —
+a reader who guesses at these will guess wrong about the contract.
+
+| Term | What it means here |
+|---|---|
+| **OHLCV** | Open, high, low, close, volume — one candle |
+| **Closed vs forming candle** | A closed candle covers a finished period. A forming one is still moving, and storing it was the bug that made 76% of daily closes wrong before 2026-07-19 |
+| **Sliding window** | The last 200 rows, loaded per run. Enough for the longest indicator warmup without reading the whole collection |
+| **Warmup** | The leading rows where a long-period indicator has no value yet. Dropped rather than stored as null |
+| **Perp** | Perpetual futures — no expiry, and the funding rate is what keeps it near spot |
+| **Funding rate** | The periodic payment between longs and shorts on a perp. Positive means longs pay |
+| **Backfill** | The one-time deep history fetch. Its merge keeps existing rows, so it cannot repair bad ones |
+| **Upsert** | Insert-or-update keyed on timestamp, which is what makes a re-run harmless |
+| **FnG** | The Fear and Greed index, fetched separately from price |
+| **Lean XS universe** | ~283 extra tokens ingested with prices and funding but no indicators, for cross-sectional research only. Deliberately outside `config.TOKENS` |
