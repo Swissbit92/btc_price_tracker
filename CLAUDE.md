@@ -6,6 +6,10 @@ Multi-token OHLCV pipeline — 17 tokens (BTC/ETH/SOL/XRP/BNB/DOGE/AVAX/LINK/ADA
 
 **⚠️ Only CLOSED candles are written (since 2026-07-19).** `run_update` bounds its fetch window by `_last_closed_period()` and filters the fetched frame — previously it stored the *currently forming* candle and the gap check skipped it forever, so **76% of daily Closes since the 2026-03-29 DST change were wrong** (and 1h bars held ~5 minutes of trading). `--refresh-last N` re-fetches the most recent N closed candles so revisions and hand-over rows self-heal; wired as `2` into both `bin/run_daily.py` and `bin/run_hourly.py`. `run_hourly` also closes the daily/weekly bars, so **correctness no longer depends on the launchd schedule** (near-free: `run_update` returns before fetching unless a period closed). **Pre-2026-07-19 history is still truncated** — open R10 repair decision in [docs/ROADMAP.md](docs/ROADMAP.md); note `backfill.py` CANNOT repair it (its merge keeps existing rows on a collision).
 
+**⚠️ Weekly bars open THURSDAY 00:00 UTC, not Monday.** KuCoin buckets weekly candles by epoch modulo and the Unix epoch was a Thursday, so every stored weekly timestamp satisfies `ts % 604800 == 0`; ccxt passes venue boundaries through and never re-cuts them. Assuming the ISO week made `_last_closed_period` return a cutoff *behind* the newest stored bar, so `run_update` early-returned "up to date" and every weekly collection sat ~2 weeks stale from 2026-07-19 to 08-09 — unseen because `run_watchdog.py` excludes weekly. Never hardcode a weekday for an exchange-supplied boundary. Weekly is **spot-only** (KuCoin Futures has no weekly).
+
+**Standing constraints:** [docs/INVARIANTS.md](docs/INVARIANTS.md) — rules binding all work here, each wired to an executable check under `tools/checks/`. Run them with `python3 "$CRUCIBLE_SCRIPTS/invariants_run.py" --repo .`; from a git worktree (no venv) pass `PYTHON=/path/to/venv/bin/python`, or they exit 2 (undetermined) rather than pretending a violation.
+
 **Ecosystem context:** [../CLAUDE.md](../CLAUDE.md) · launchd schedule & gotchas: [../docs/shared/launchd_schedule.md](../docs/shared/launchd_schedule.md)
 
 ## Commands
@@ -49,7 +53,7 @@ Threat level: [docs/THREAT_LEVEL.md](docs/THREAT_LEVEL.md) — **Medium**; corru
 
 - **`com.eeva.tracker-daily`** (03:10 local) → `bin/run_daily.py`: spot-daily + perp-daily + weekly + CSV export. Telegram GREEN/RED. Offset to :10 to avoid hourly `wait_for_mongo()` collision.
 - **`com.eeva.tracker-hourly`** (:05 every hour) → `bin/run_hourly.py`: 17 tokens 1h spot + perp. RED on failure only.
-- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 85 collections (68 OHLCV + 17 funding_rate). Thresholds: 36h daily, 3h hourly. RED on stale; GREEN heartbeat Sundays.
+- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 85 OHLCV collections (incl. weekly since 2026-08-09) + 17 funding_rate. Staleness is **whole periods behind the last closed period** (`MAX_PERIODS_BEHIND`), not wall-clock age — a bar's timestamp age oscillates a full period between writes, so the old `now - timestamp` thresholds were only correct at the hour the job happened to run. RED on stale; GREEN heartbeat Sundays. Safe to run manually at any hour; it was not before.
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual; writes to Atlas).
 - **Logs:** `logs/` date-stamped (daily: 30-day, hourly: 14-day, watchdog: per-day).
 
