@@ -30,16 +30,40 @@ LOG_FILE = LOG_DIR / f"watchdog-{datetime.now(timezone.utc).strftime('%Y-%m-%d')
 HEADER_IMAGE = PROJECT_DIR / "images" / "PriceTracker_01.png"
 HOSTNAME = os.uname().nodename.split(".")[0]
 
-# Thresholds: allow for one missed run + clock skew.
-# Daily/perp-daily: 36h (next run at T+24h, plus 12h grace).
-# 1h/perp-1h: 3h (latest candle is typically 1-2h old since current hour is forming).
-# Weekly: skipped — pre-existing inconsistency (SOL/PEPE/ARB stale at 04-02) unrelated to watchdog's purpose.
-THRESHOLDS = {
-    ("1d", "spot"): timedelta(hours=36),
-    ("1d", "perp"): timedelta(hours=36),
-    ("1h", "spot"): timedelta(hours=3),
-    ("1h", "perp"): timedelta(hours=3),
+# How many whole periods a collection may lag the last CLOSED period before it
+# counts as stale. Measured with `periods_behind`, NOT as `now - timestamp`:
+# a bar's timestamp age oscillates by a full period between writes (daily
+# 25h->49h, weekly 7->14 days), so a wall-clock threshold is either permanently
+# noisy or so loose it notices a failure a period late. The old 36h daily
+# threshold passed only because this job runs at 05:00 UTC where the age is
+# ~29h; running it after ~12:00 UTC reported all 34 daily collections stale.
+#
+# 0 = must be fully current. 1 = one missed run of grace.
+#   1d: the daily job writes at 01:10 UTC, this runs at 05:00 UTC -> normally 0.
+#   1h: the hourly job runs at :05, so the hour that closed at :00 is written
+#       five minutes later -> normally 1 behind at any given instant.
+#   1w: the weekly step runs inside BOTH the daily and hourly jobs -> normally 0.
+#
+# Weekly is checked again as of 2026-08-09. It was excluded with a comment
+# calling the staleness a "pre-existing inconsistency ... unrelated to the
+# watchdog's purpose". That dismissal was the bug report, mis-triaged: the
+# cause was a Monday/Thursday anchor mismatch that stalled every weekly update
+# for three weeks, and the exclusion is why nobody saw it. An exclusion added
+# to silence a known-noisy signal removes the only thing that would say the
+# noise had become a fault.
+MAX_PERIODS_BEHIND = {
+    ("1d", "spot"): 1,
+    ("1d", "perp"): 1,
+    ("1h", "spot"): 2,
+    ("1h", "perp"): 2,
+    ("1w", "spot"): 1,  # spot only — KuCoin Futures has no weekly
 }
+
+# Funding stays on a wall-clock threshold: its period is 8h against a 36h
+# bound, so the one-period oscillation is absorbed with room to spare. The
+# failure mode it guards is the ~2-day silent API dead zone (2026-04-26), not
+# a boundary-alignment error.
+FUNDING_MAX_AGE = timedelta(hours=36)
 
 
 def _send_telegram(msg, photo_path=None):
@@ -115,12 +139,13 @@ def notify_watchdog_error(detail):
 def check_freshness(log):
     from btc_tracker_mongodb.config import TOKENS
     from btc_tracker_mongodb.db import get_collection, get_funding_collection
+    from btc_tracker_mongodb.pipeline import periods_behind
 
     now = datetime.now(timezone.utc)
     stale, checked = [], 0
 
     for symbol in TOKENS:
-        for (tf, mt), threshold in THRESHOLDS.items():
+        for (tf, mt), max_behind in MAX_PERIODS_BEHIND.items():
             checked += 1
             try:
                 c = get_collection(symbol, tf, market_type=mt)
@@ -131,18 +156,18 @@ def check_freshness(log):
                 latest = doc["timestamp"]
                 if latest.tzinfo is None:
                     latest = latest.replace(tzinfo=timezone.utc)
-                age = now - latest
-                if age > threshold:
+                behind = periods_behind(latest, now, tf)
+                if behind > max_behind:
                     stale.append(
                         f"{symbol} {tf} {mt}: {latest.strftime('%Y-%m-%d %H:%M')} "
-                        f"({int(age.total_seconds() / 3600)}h old, threshold {int(threshold.total_seconds() / 3600)}h)"
+                        f"({behind} periods behind, allowed {max_behind})"
                     )
             except Exception as e:
                 stale.append(f"{symbol} {tf} {mt}: QUERY ERROR {type(e).__name__}")
 
-        # Check funding rate collection (8h data — threshold 36h same as daily OHLCV)
+        # Check funding rate collection (8h data — see FUNDING_MAX_AGE)
         checked += 1
-        funding_threshold = timedelta(hours=36)
+        funding_threshold = FUNDING_MAX_AGE
         try:
             c = get_funding_collection(symbol)
             doc = c.find_one(sort=[("timestamp", -1)])

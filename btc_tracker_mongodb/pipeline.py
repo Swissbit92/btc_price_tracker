@@ -48,10 +48,22 @@ def _floor_timestamp(dt: datetime, timeframe: str) -> datetime:
     elif timeframe == "4h":
         return dt.replace(hour=(dt.hour // 4) * 4, minute=0, second=0, microsecond=0)
     elif timeframe == "1w":
-        # Floor to Monday 00:00 UTC
-        days_since_monday = dt.weekday()
-        monday = dt - timedelta(days=days_since_monday)
-        return monday.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Floor to the exchange's weekly boundary, which is epoch-anchored, NOT
+        # the ISO week. KuCoin buckets weekly candles by epoch modulo, and the
+        # Unix epoch (1970-01-01) was a Thursday, so weeks open Thursday 00:00
+        # UTC. ccxt does the same in its own `round_timeframe`, and deliberately
+        # never re-cuts venue boundaries, so what we store is whatever KuCoin
+        # served: every stored weekly bar satisfies `ts % 604800 == 0`.
+        #
+        # This previously floored to Monday. That is the ISO convention (and
+        # what Binance/TradingView use), but it is 4 days off KuCoin's anchor,
+        # so `_last_closed_period` returned a cutoff behind the newest stored
+        # bar and `run_update` took its "up to date" early-return without ever
+        # fetching. Weekly data sat ~2 weeks behind from 2026-07-19 until this
+        # fix, unnoticed because the watchdog excludes weekly.
+        week = int(_timedelta_for("1w").total_seconds())
+        ts = int(dt.timestamp())
+        return datetime.fromtimestamp(ts - (ts % week), tz=timezone.utc)
     else:  # 1d
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -69,6 +81,31 @@ def _last_closed_period(dt: datetime, timeframe: str) -> datetime:
     stored.
     """
     return _floor_timestamp(dt, timeframe) - _timedelta_for(timeframe)
+
+
+def periods_behind(latest: datetime, now: datetime, timeframe: str) -> int:
+    """How many whole periods behind the last CLOSED period `latest` sits. 0 = current.
+
+    Freshness has to be measured against the last closed period, never against
+    `now`. A stored bar's timestamp age oscillates by a full period between
+    writes — daily swings 25h->49h, weekly 7->14 days — because the bar is
+    stamped at the START of a period that closed one period later. Any
+    ``now - latest`` threshold is therefore either permanently noisy or set so
+    loose that it detects a failure a full period late. The 36h daily threshold
+    only ever passed because the watchdog runs at 05:00 UTC, where the age
+    happens to be ~29h; running it after ~12:00 UTC reported all 34 daily
+    collections stale and fired a RED alert with nothing actually wrong.
+
+    Public because the watchdog must share this with the writer. Computing
+    "when did a period close" a second time in the monitoring script is how you
+    get two disagreeing notions of a boundary — which is exactly the defect
+    this repo shipped for three weeks when `_floor_timestamp` said Monday and
+    KuCoin said Thursday.
+    """
+    expected = _last_closed_period(now, timeframe)
+    if latest >= expected:
+        return 0
+    return round((expected - latest) / _timedelta_for(timeframe))
 
 
 def _drop_unclosed(df, timeframe: str, now: datetime | None = None):

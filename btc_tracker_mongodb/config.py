@@ -170,7 +170,7 @@ TIMEFRAME_GLOSSARY = {
     "1w": {
         "name": "Weekly",
         "interval": "7 days",
-        "description": "One candle per week (Monday open to Sunday close, UTC)",
+        "description": "One candle per week (Thursday open to Wednesday close, UTC — KuCoin anchors weeks to the Unix epoch, not the ISO week)",
         "production": True,
         "market_types": ["spot"],
     },
