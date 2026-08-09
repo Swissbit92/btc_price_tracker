@@ -1,4 +1,4 @@
-# btc_price_tracker — Architecture
+# btc_price_tracker — Architecture (btc_price_tracker)
 
 Generated from docs/ARCHITECTURE.md. The rendered page is the same content with diagrams; this is the text of it.
 
