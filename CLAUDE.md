@@ -42,6 +42,9 @@ docker build -t btc-tracker . && docker run --env-file .env btc-tracker
 
 Pipeline design, MongoDB schema, module map, indicator list, launcher scripts: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
+Security posture: [SECURITY.md](SECURITY.md) — no exchange credential exists here; the asset is the data contract.
+Threat level: [docs/THREAT_LEVEL.md](docs/THREAT_LEVEL.md) — **Medium**; corruption is the risk, not theft.
+
 ## launchd jobs (this repo)
 
 - **`com.eeva.tracker-daily`** (03:10 local) → `bin/run_daily.py`: spot-daily + perp-daily + weekly + CSV export. Telegram GREEN/RED. Offset to :10 to avoid hourly `wait_for_mongo()` collision.
