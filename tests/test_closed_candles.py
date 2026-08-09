@@ -19,6 +19,7 @@ import pandas as pd
 import pytest
 
 from btc_tracker_mongodb.pipeline import (
+    periods_behind,
     _drop_unclosed,
     _floor_timestamp,
     _last_closed_period,
@@ -103,6 +104,65 @@ class TestLastClosedPeriod:
 
         assert last_closed == datetime(2026, 7, 30, tzinfo=timezone.utc)
         assert fetch_from <= last_closed, "would early-return 'up to date' and never advance"
+
+
+class TestPeriodsBehind:
+    """Freshness measured against the last closed period, not against `now`.
+
+    The old watchdog compared `now - timestamp` to a fixed threshold. A bar's
+    timestamp age oscillates by a full period between writes, so that comparison
+    is only correct at one hour of the day.
+    """
+
+    def test_a_current_bar_is_zero_behind_at_every_hour_of_the_period(self):
+        """The property the wall-clock threshold did not have.
+
+        A daily collection written on schedule is 0 behind whether you ask at
+        05:00 UTC or at 23:00 UTC. Under the old 36h threshold the same
+        collection was 'fresh' at 05:00 (29h) and 'stale' at 19:00 (43h).
+        """
+        for hour in range(24):
+            now = datetime(2026, 8, 9, hour, 30, tzinfo=timezone.utc)
+            latest = _last_closed_period(now, "1d")
+            assert periods_behind(latest, now, "1d") == 0, f"failed at {hour:02d}:30"
+
+    def test_the_false_alarm_that_started_this(self):
+        """2026-08-09 19:09 UTC: the daily job had run correctly at 01:10 and
+        stored the 08-08 bar. Raw age was 43h against a 36h threshold, so the
+        watchdog fired a RED alert for 34 collections with nothing wrong."""
+        now = datetime(2026, 8, 9, 19, 9, tzinfo=timezone.utc)
+        latest = datetime(2026, 8, 8, tzinfo=timezone.utc)
+
+        assert (now - latest) > timedelta(hours=36)  # what the old check saw
+        assert periods_behind(latest, now, "1d") == 0  # what was actually true
+
+    def test_a_genuinely_missed_day_is_caught(self):
+        now = datetime(2026, 8, 9, 5, 0, tzinfo=timezone.utc)
+
+        assert periods_behind(datetime(2026, 8, 8, tzinfo=timezone.utc), now, "1d") == 0
+        assert periods_behind(datetime(2026, 8, 7, tzinfo=timezone.utc), now, "1d") == 1
+        assert periods_behind(datetime(2026, 8, 4, tzinfo=timezone.utc), now, "1d") == 4
+
+    def test_the_weekly_stall_is_visible(self):
+        """The state weekly sat in for three weeks while nothing alerted."""
+        now = datetime(2026, 8, 9, 5, 0, tzinfo=timezone.utc)
+        latest = datetime(2026, 7, 23, tzinfo=timezone.utc)  # real stored value
+
+        assert periods_behind(latest, now, "1w") == 1
+
+    def test_hourly_lags_one_period_by_construction(self):
+        """The hourly job runs at :05, so the hour that closed at :00 is written
+        five minutes later — 1 behind is normal, not a fault."""
+        now = datetime(2026, 8, 9, 5, 0, tzinfo=timezone.utc)
+        latest = datetime(2026, 8, 9, 3, 0, tzinfo=timezone.utc)
+
+        assert periods_behind(latest, now, "1h") == 1
+
+    def test_a_bar_from_the_future_is_never_negative(self):
+        now = datetime(2026, 8, 9, 5, 0, tzinfo=timezone.utc)
+        ahead = datetime(2026, 8, 20, tzinfo=timezone.utc)
+
+        assert periods_behind(ahead, now, "1d") == 0
 
 
 class TestDropUnclosed:

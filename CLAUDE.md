@@ -53,7 +53,7 @@ Threat level: [docs/THREAT_LEVEL.md](docs/THREAT_LEVEL.md) — **Medium**; corru
 
 - **`com.eeva.tracker-daily`** (03:10 local) → `bin/run_daily.py`: spot-daily + perp-daily + weekly + CSV export. Telegram GREEN/RED. Offset to :10 to avoid hourly `wait_for_mongo()` collision.
 - **`com.eeva.tracker-hourly`** (:05 every hour) → `bin/run_hourly.py`: 17 tokens 1h spot + perp. RED on failure only.
-- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 85 collections (68 OHLCV + 17 funding_rate). Thresholds: 36h daily, 3h hourly. RED on stale; GREEN heartbeat Sundays.
+- **`com.eeva.tracker-watchdog`** (07:00 local) → `bin/run_watchdog.py`: freshness check of 85 OHLCV collections (incl. weekly since 2026-08-09) + 17 funding_rate. Staleness is **whole periods behind the last closed period** (`MAX_PERIODS_BEHIND`), not wall-clock age — a bar's timestamp age oscillates a full period between writes, so the old `now - timestamp` thresholds were only correct at the hour the job happened to run. RED on stale; GREEN heartbeat Sundays. Safe to run manually at any hour; it was not before.
 - **Fallback:** GitHub Actions `workflow_dispatch` (manual; writes to Atlas).
 - **Logs:** `logs/` date-stamped (daily: 30-day, hourly: 14-day, watchdog: per-day).
 
