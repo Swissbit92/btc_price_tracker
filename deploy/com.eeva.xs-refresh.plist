@@ -21,15 +21,15 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin/python</string>
-        <string>/Users/swissbit./nephilim/btc_price_tracker/tools/xs/lean_ingest.py</string>
+        <string>/Users/swissbit./nephilim-ecosystem/btc_price_tracker/venv/bin/python</string>
+        <string>/Users/swissbit./nephilim-ecosystem/btc_price_tracker/tools/xs/lean_ingest.py</string>
         <string>--incremental</string>
         <string>--workers</string>
         <string>4</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/swissbit./nephilim/btc_price_tracker</string>
+    <string>/Users/swissbit./nephilim-ecosystem/btc_price_tracker</string>
 
     <key>StartCalendarInterval</key>
     <dict>
@@ -40,15 +40,15 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-xs-refresh.stdout.log</string>
+    <string>/Users/swissbit./nephilim-ecosystem/btc_price_tracker/logs/launchd-xs-refresh.stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/swissbit./nephilim/btc_price_tracker/logs/launchd-xs-refresh.stderr.log</string>
+    <string>/Users/swissbit./nephilim-ecosystem/btc_price_tracker/logs/launchd-xs-refresh.stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/swissbit./nephilim/btc_price_tracker/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/swissbit./nephilim-ecosystem/btc_price_tracker/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 
     <key>RunAtLoad</key>
