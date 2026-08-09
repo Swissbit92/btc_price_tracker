@@ -6,6 +6,10 @@ Multi-token OHLCV pipeline — 17 tokens (BTC/ETH/SOL/XRP/BNB/DOGE/AVAX/LINK/ADA
 
 **⚠️ Only CLOSED candles are written (since 2026-07-19).** `run_update` bounds its fetch window by `_last_closed_period()` and filters the fetched frame — previously it stored the *currently forming* candle and the gap check skipped it forever, so **76% of daily Closes since the 2026-03-29 DST change were wrong** (and 1h bars held ~5 minutes of trading). `--refresh-last N` re-fetches the most recent N closed candles so revisions and hand-over rows self-heal; wired as `2` into both `bin/run_daily.py` and `bin/run_hourly.py`. `run_hourly` also closes the daily/weekly bars, so **correctness no longer depends on the launchd schedule** (near-free: `run_update` returns before fetching unless a period closed). **Pre-2026-07-19 history is still truncated** — open R10 repair decision in [docs/ROADMAP.md](docs/ROADMAP.md); note `backfill.py` CANNOT repair it (its merge keeps existing rows on a collision).
 
+**⚠️ Weekly bars open THURSDAY 00:00 UTC, not Monday.** KuCoin buckets weekly candles by epoch modulo and the Unix epoch was a Thursday, so every stored weekly timestamp satisfies `ts % 604800 == 0`; ccxt passes venue boundaries through and never re-cuts them. Assuming the ISO week made `_last_closed_period` return a cutoff *behind* the newest stored bar, so `run_update` early-returned "up to date" and every weekly collection sat ~2 weeks stale from 2026-07-19 to 08-09 — unseen because `run_watchdog.py` excludes weekly. Never hardcode a weekday for an exchange-supplied boundary. Weekly is **spot-only** (KuCoin Futures has no weekly).
+
+**Standing constraints:** [docs/INVARIANTS.md](docs/INVARIANTS.md) — rules binding all work here, each wired to an executable check under `tools/checks/`. Run them with `python3 "$CRUCIBLE_SCRIPTS/invariants_run.py" --repo .`; from a git worktree (no venv) pass `PYTHON=/path/to/venv/bin/python`, or they exit 2 (undetermined) rather than pretending a violation.
+
 **Ecosystem context:** [../CLAUDE.md](../CLAUDE.md) · launchd schedule & gotchas: [../docs/shared/launchd_schedule.md](../docs/shared/launchd_schedule.md)
 
 ## Commands
