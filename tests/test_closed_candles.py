@@ -23,6 +23,7 @@ from btc_tracker_mongodb.pipeline import (
     _drop_unclosed,
     _floor_timestamp,
     _last_closed_period,
+    nan_anomalies,
 )
 
 
@@ -283,3 +284,60 @@ class TestRefreshWindow:
         fetch_from = self._fetch_from(last_ts, last_closed, timedelta(days=1), 0)
 
         assert fetch_from > last_closed  # → run_update returns early
+
+
+class TestNanAnomalies:
+    """Warmup NaNs must not drop a bar; interior NaNs must still block it.
+
+    The old rule dropped a row if ANY validatable column was NaN. Since
+    `run_update` writes per timestamp and the gap check only looks at the
+    NEWEST stored one, a dropped row became permanently unreachable — it
+    manufactured holes rather than delaying rows. SUI had 6 of 7 pending
+    weekly bars dropped and the 7th written.
+    """
+
+    def _frame(self, values):
+        idx = pd.date_range("2026-01-01", periods=len(values), freq="D", tz="UTC")
+        return pd.DataFrame({"SMA_50": values}, index=idx)
+
+    def test_warmup_nans_do_not_block(self):
+        """NaN before the column's first value is warmup — expected, and
+        documented in ARCHITECTURE.md for newer tokens."""
+        df = self._frame([float("nan"), float("nan"), 1.0, 2.0])
+
+        for i in (0, 1):
+            ts = df.index[i]
+            assert nan_anomalies(df, df.loc[ts], ts, ["SMA_50"]) == []
+
+    def test_interior_nan_still_blocks(self):
+        """A NaN after the column has produced a value is a real anomaly."""
+        df = self._frame([float("nan"), 1.0, float("nan"), 3.0])
+        ts = df.index[2]
+
+        assert nan_anomalies(df, df.loc[ts], ts, ["SMA_50"]) == ["SMA_50"]
+
+    def test_a_populated_row_is_never_flagged(self):
+        df = self._frame([float("nan"), 1.0, 2.0, 3.0])
+        ts = df.index[3]
+
+        assert nan_anomalies(df, df.loc[ts], ts, ["SMA_50"]) == []
+
+    def test_an_all_nan_column_is_warmup_everywhere(self):
+        """`_validatable_cols` already drops these, but the rule must agree:
+        a column that never produced a value cannot make a row anomalous."""
+        df = self._frame([float("nan")] * 4)
+
+        for ts in df.index:
+            assert nan_anomalies(df, df.loc[ts], ts, ["SMA_50"]) == []
+
+    def test_the_sui_case_writes_every_pending_bar(self):
+        """Regression for the real state: 43 stored weekly rows, 7 pending, and
+        SMA_50 valid only on the very last row of the 50-row frame. The old
+        rule wrote 1 of 7 and orphaned the other 6."""
+        vals = [float("nan")] * 49 + [1.0]
+        df = self._frame(vals)
+
+        pending = df.index[-7:]
+        blocked = [ts for ts in pending if nan_anomalies(df, df.loc[ts], ts, ["SMA_50"])]
+
+        assert blocked == [], "warmup rows would be orphaned, leaving permanent holes"

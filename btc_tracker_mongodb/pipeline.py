@@ -132,6 +132,37 @@ def _validatable_cols(df) -> list[str]:
     return [c for c in present if not df[c].isna().all()]
 
 
+def nan_anomalies(df, row, ts, valid_cols) -> list[str]:
+    """Columns NaN at `ts` for a reason other than indicator warmup.
+
+    An indicator's NaNs are always a leading prefix — SMA_50 cannot have a
+    value until row 50 — so a NaN strictly before the column's first valid
+    index is warmup, which is expected and documented: `docs/ARCHITECTURE.md`
+    states newer tokens carry null SMA_200/EMA_200 until they have the history.
+    A NaN *at or after* that index is a real anomaly and still blocks the row.
+
+    `_validatable_cols` already excludes columns that are entirely NaN, with
+    the stated aim of not dropping every row — the same failure mode this
+    handles one step further in. Only the all-or-nothing case was covered, so a
+    column with a single valid value (SMA_50 over a 50-row frame) still blocked
+    the other 49 rows.
+
+    That mattered because `run_update` writes per timestamp and the gap check
+    only ever looks at the NEWEST stored one: of SUI's seven pending weekly
+    bars, six were dropped and the newest written, so the six became
+    permanently unreachable. It manufactured holes rather than delaying rows —
+    sol's weekly series shows exactly that (`04-02 -> 05-14 -> 06-18 -> 07-16`).
+    """
+    out = []
+    for c in valid_cols:
+        if not pd.isna(row[c]):
+            continue
+        first_valid = df[c].first_valid_index()
+        if first_valid is not None and ts >= first_valid:
+            out.append(c)
+    return out
+
+
 def _merge_sentiment(docs: list[dict], fng: dict | None) -> list[dict]:
     """Merge Fear & Greed data into each document."""
     if fng is None:
@@ -280,8 +311,11 @@ def run_update(symbol: str, timeframe: str, test: bool = False, refresh_last: in
         row = df_full.loc[ts]
         if isinstance(row, pd.DataFrame):
             row = row.iloc[-1]
-        if row[valid_cols].isna().any():
-            print(f"[update] Skipping {ts}: NaN in indicators")
+        anomalies = nan_anomalies(df_full, row, ts, valid_cols)
+        if anomalies:
+            shown = ", ".join(anomalies[:5])
+            more = f" (+{len(anomalies) - 5} more)" if len(anomalies) > 5 else ""
+            print(f"[update] Skipping {ts}: NaN in indicators — {shown}{more}")
             continue
         doc = row.to_dict()
         doc["timestamp"] = ts
@@ -635,8 +669,11 @@ def run_perp_update(symbol: str, timeframe: str, test: bool = False, refresh_las
         row = df_full.loc[ts]
         if isinstance(row, pd.DataFrame):
             row = row.iloc[-1]
-        if row[valid_cols].isna().any():
-            print(f"[perp-update] Skipping {ts}: NaN in indicators")
+        anomalies = nan_anomalies(df_full, row, ts, valid_cols)
+        if anomalies:
+            shown = ", ".join(anomalies[:5])
+            more = f" (+{len(anomalies) - 5} more)" if len(anomalies) > 5 else ""
+            print(f"[perp-update] Skipping {ts}: NaN in indicators — {shown}{more}")
             continue
         doc = row.to_dict()
         doc["timestamp"] = ts

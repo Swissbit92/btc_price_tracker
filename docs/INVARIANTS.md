@@ -77,3 +77,42 @@ names *are* the interface. Governed ecosystem-wide by
 No check is wired, and that is an honest gap rather than an oversight: a rename is only a
 violation in the absence of the corresponding downstream change, which nothing in this repo
 can see. Enforcement is the ADR and review, not a script.
+
+## compute_all must never raise, whatever the series length
+
+Status: active
+Check: tools/checks/compute_all_survives_short_series.sh
+
+WHEN `compute_all` is given an OHLCV frame of any length THE SYSTEM SHALL return a frame,
+leaving columns it cannot compute absent or NaN, and SHALL NOT raise.
+
+Two separate crashes shipped here because `pandas_ta` signals "not enough history" by
+returning `None` rather than an empty frame, and the calling code assumed a frame. Guarding
+the container instead of the object (`ta.ichimoku` returns a *tuple* whose first element is
+None) took out `compute_all` for any series under 52 periods; assigning a bare `None` to a
+column produced an object dtype that later arithmetic could not subtract, crashing every
+frame of 4-13 rows.
+
+The consequence in both cases was total and silent: the token's update died, so no bar was
+ever written, and five weekly collections sat stuck for up to 129 days while the logs showed
+only pandas_ta's own "Returning None" notice.
+
+NaN is the correct output for an indicator without enough history — it is what the write path
+already treats as warmup. An exception is not.
+
+## Warmup NaNs must not drop a bar
+
+Status: active
+Check: tools/checks/warmup_nans_do_not_drop_bars.sh
+
+WHEN a row is considered for writing THE SYSTEM SHALL block it only for a NaN at or after
+that column's first valid index, and SHALL write rows whose NaNs are indicator warmup.
+
+`run_update` writes per timestamp and the gap check reads only the newest stored one, so a
+dropped row is not deferred — it becomes permanently unreachable. Dropping on any NaN turned
+six of SUI's seven pending weekly bars into holes and wrote the seventh, which is why sol's
+series reads `04-02 -> 05-14 -> 06-18 -> 07-16`.
+
+Warmup nulls are the documented contract, not a defect: `docs/ARCHITECTURE.md` states newer
+tokens carry null SMA_200/EMA_200 until they have the history. A NaN *after* a column has
+produced a value is a different thing entirely and still blocks.
