@@ -837,9 +837,38 @@ def compute_all(df: pd.DataFrame, timeframe: str = "1h") -> pd.DataFrame:
     _compute_psar(df)
     _compute_stoch(df)
     _compute_trix(df)
+    # --- Normalise dtypes before anything consumes the indicator columns ---
+    _coerce_numeric_columns(df)
     # --- ML feature engineering ---
     _compute_ml_features(df)
     return df
+
+
+def _coerce_numeric_columns(df: pd.DataFrame) -> None:
+    """Force indicator columns to a numeric dtype, turning None into NaN.
+
+    A `ta.*` helper returns None when the series is too short for it, and
+    `df[col] = None` assigns that scalar to every row — producing an OBJECT
+    column full of Nones rather than a float column of NaNs. Downstream
+    arithmetic then raises instead of propagating:
+
+        TypeError: unsupported operand type(s) for -: 'NoneType' and 'NoneType'
+
+    Measured before this: frames of 4-13 rows crashed in `_compute_ml_features`
+    (`df["RSI"].diff(3)` on an object column). That band is reachable in
+    production — wif's weekly window is 4 stored rows, so a single new candle
+    makes a 5-row frame.
+
+    Done once here rather than guarded at ~30 assignment sites: the sites that
+    do guard (`if result is not None`) already leave the column absent, which
+    the pipeline handles, and the ones that do not are indistinguishable from
+    each other at the point of failure. NaN is also the semantically right
+    value — it means "not enough history yet", which is what the rest of the
+    pipeline already treats as warmup.
+    """
+    for col in get_numeric_cols():
+        if col in df.columns and df[col].dtype == object:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
 
 def get_numeric_cols() -> list[str]:
@@ -907,6 +936,26 @@ def _compute_ichimoku(df: pd.DataFrame):
                        tenkan=9, kijun=26, senkou=52)
     if ichi is not None and isinstance(ichi, tuple) and len(ichi) >= 1:
         ichi_df = ichi[0]
+        # `ta.ichimoku` returns a tuple whose FIRST ELEMENT is None when the
+        # series is shorter than senkou (52). The outer guard passes in that
+        # case — the tuple itself is neither None nor empty — so dereferencing
+        # ichi_df raised AttributeError and took the whole compute_all() with
+        # it. Every other helper in this module guards the object it actually
+        # dereferences; this one guarded the container.
+        #
+        # The effect was silent and total: any token with under 52 periods in
+        # its window could never have a bar written. Five weekly collections
+        # (sol, pepe, sui, wif, wld) were stuck for up to 129 days, and it read
+        # as an indicator-warmup quirk because the log line immediately above
+        # is pandas_ta's own "Series has N rows but indicator requires at least
+        # 52. Returning None."
+        #
+        # Leaving the Ichimoku_* columns absent is correct rather than a
+        # fallback: `_validatable_cols` intersects with the frame's columns, so
+        # an absent column cannot block the row, and a token genuinely has no
+        # ichimoku until it has 52 periods of history.
+        if ichi_df is None or ichi_df.empty:
+            return
         cols = ichi_df.columns.tolist()
         # Returns: ISA_9, ISB_26, ITS_9, IKS_26, ICS_26
         for col in cols:
