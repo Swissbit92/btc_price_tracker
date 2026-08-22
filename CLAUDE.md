@@ -16,7 +16,12 @@ Multi-token OHLCV pipeline — 17 tokens (BTC/ETH/SOL/XRP/BNB/DOGE/AVAX/LINK/ADA
 
 ```bash
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt          # production (all deps pinned == )
+pip install -r requirements-dev.txt      # + ruff, for local lint (adds -r requirements.txt)
+
+# CI (also runs on push/PR to main/dev — .github/workflows/ci.yml)
+python -m pytest -q
+ruff check .
 
 # Incremental updates (production use)
 python update.py --all                          # all tokens, all timeframes
@@ -70,8 +75,8 @@ Required in `.env`: `MONGODB_URI`, `TG_BOT_TOKEN`, `TG_CHAT_ID`. CCXT uses KuCoi
 - `pandas-ta-classic` only (not `pandas-ta` or `ta`). Import: `import pandas_ta_classic as ta`.
 - Fibonacci columns use underscores: `Fib_236`, `Fib_382` — MongoDB rejects dots in field names.
 - StochRSI normalized to [0, 1] (not [0, 100]).
-- `ccxt` pinned to `4.5.40` — v4.5.41 has a packaging bug.
-- `fetch_candles()` retries 3× with exponential backoff on 429 — CCXT misclassifies KuCoin's `429000` as `ExchangeError`.
+- **All runtime deps pinned `==` in `requirements.txt` (2026-08-22), plus `requirements.lock`** (full `pip freeze` reference). `pandas`/`pandas-ta-classic`/`numpy` compute the VALUES under ADR-001's public-API column names — a floating pin can drift those values silently across the venv, both `workflow_dispatch` workflows, and the Dockerfile. `ccxt` stays pinned to `4.5.40` — v4.5.41 has a packaging bug. Bump deliberately (diff indicator values before/after), never via an unpinned reinstall.
+- **KuCoin `429000` retry** (`btc_tracker_mongodb/retry.py::call_with_kucoin_retry`, shared by both spot and perp) — 3× exponential backoff (1s/2s/4s) on CCXT's misclassified `ExchangeError`. Used by `extract.fetch_candles`, `extract_perp.fetch_perp_candles`, and `extract_perp.fetch_funding_rate_history` (the perp path had no retry until 2026-08-22 — `lean_pipeline._retry()` stays separate, a broader bulk-backfill retry).
 - VWAP: rolling 24-bar for intraday (1h, 4h), cumulative for daily/weekly.
 
 ## MCP Server (`mcp_server.py`)

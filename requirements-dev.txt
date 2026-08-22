@@ -1,0 +1,4 @@
+# Dev/CI-only tooling — not needed for production runtime (launchd jobs, Dockerfile).
+# Pin matches the ecosystem-wide ruff version (eeva-dca, eeva-exec pyproject.toml).
+-r requirements.txt
+ruff==0.9.10

@@ -1,0 +1,36 @@
+name: CI
+
+# Test/lint gate on every push and PR. Separate from update-daily.yml / update-hourly.yml,
+# which are workflow_dispatch-only fallbacks (local launchd is primary) — this workflow does
+# NOT touch those or their schedules, and does not write to Atlas or any MongoDB: every test
+# here is a pure function or mocks ccxt/MongoDB (see tests/), so no DB is provisioned.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Pytest
+        run: python -m pytest -q

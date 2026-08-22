@@ -3,12 +3,13 @@ extract.py — Fetch OHLCV candles from KuCoin via CCXT.
 """
 
 import time
-import ccxt
-from ccxt.base.errors import ExchangeError
-import pandas as pd
 from datetime import datetime, timezone
 
-from .config import TIMEFRAMES, SEED_WINDOW
+import ccxt
+import pandas as pd
+
+from .config import SEED_WINDOW
+from .retry import call_with_kucoin_retry
 
 # Shared exchange instance (public endpoints only, no auth needed)
 _exchange = None
@@ -58,25 +59,19 @@ def fetch_candles(
 
     while remaining > 0:
         batch_size = min(remaining, 500)  # KuCoin max per request
-        for attempt in range(3):
-            try:
-                ohlcv = ex.fetch_ohlcv(ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size)
-                break
-            except ExchangeError as e:
-                if "429" in str(e) and attempt < 2:
-                    time.sleep(2 ** attempt)  # 1s, 2s backoff
-                    continue
-                raise
+        ohlcv = call_with_kucoin_retry(
+            ex.fetch_ohlcv, ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size
+        )
         if not ohlcv:
             break
         for row in ohlcv:
-            ts_ms, o, h, l, c, v = row
+            ts_ms, o, h, low, c, v = row
             dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             all_rows.append({
                 "timestamp": dt,
                 "Open": float(o),
                 "High": float(h),
-                "Low": float(l),
+                "Low": float(low),
                 "Close": float(c),
                 "Volume": float(v),
             })

@@ -1,6 +1,5 @@
 """Tests for btc_tracker_mongodb.config — collection naming, symbol maps, constants."""
 
-import pytest
 
 from btc_tracker_mongodb.config import (
     MARKET_TYPES,
@@ -9,7 +8,6 @@ from btc_tracker_mongodb.config import (
     get_collection_name,
     get_funding_collection_name,
 )
-
 
 # ---------------------------------------------------------------------------
 # get_collection_name — spot (default)

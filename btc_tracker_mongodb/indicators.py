@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 import pandas_ta_classic as ta
 
-
 # ---------------------------------------------------------------------------
 # Indicator Glossary — single source of truth for column metadata
 # ---------------------------------------------------------------------------

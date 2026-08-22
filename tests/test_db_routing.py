@@ -1,10 +1,8 @@
 """Tests for db.py collection routing — verify correct collection names without MongoDB."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from btc_tracker_mongodb.db import get_collection, get_funding_collection
-
 
 # ---------------------------------------------------------------------------
 # get_collection routing

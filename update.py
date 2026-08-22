@@ -9,7 +9,8 @@ Usage:
 """
 
 import argparse
-from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES, MARKET_TYPES
+
+from btc_tracker_mongodb.config import MARKET_TYPES, TIMEFRAMES
 from btc_tracker_mongodb.pipeline import run_update, run_update_all
 
 
