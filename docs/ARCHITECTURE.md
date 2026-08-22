@@ -626,7 +626,7 @@ re-run — upsert semantics, per-token error isolation, resumable.
 - **Weekly bars open Thursday 00:00 UTC, not Monday.** KuCoin buckets weekly candles by epoch modulo and the Unix epoch was a Thursday, so every stored weekly timestamp satisfies `ts % 604800 == 0`. ccxt passes venue boundaries through unchanged and [deliberately never re-cuts them](https://github.com/ccxt/ccxt/issues/25046), so this is the exchange's convention, not ours — Binance and TradingView use Monday. Consumers wanting an ISO week must aggregate it themselves from `{token}_daily_price_data`. Assuming Monday here stalled every weekly update for three weeks in 2026; see [LESSONS_LEARNED.md](LESSONS_LEARNED.md).
 - **Total:** ~110 collections.
 
-Ecosystem collection naming contract: [../docs/shared/mongodb_contract.md](../docs/shared/mongodb_contract.md)
+Ecosystem collection naming contract: [../../docs/shared/mongodb_contract.md](../../docs/shared/mongodb_contract.md)
 
 ## Key Modules (`btc_tracker_mongodb/`)
 
