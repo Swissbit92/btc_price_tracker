@@ -8,10 +8,11 @@ Usage:
 """
 
 import argparse
-import json
+
 import pandas as pd
+
+from .config import METADATA_COLLECTION, get_collection_name
 from .db import get_collection, get_db
-from .config import get_collection_name, METADATA_COLLECTION
 
 
 def query_latest(symbol: str, timeframe: str, test: bool = False, limit: int = 10):

@@ -14,7 +14,7 @@ Schedule: 07:00 local via com.eeva.tracker-watchdog launchd plist.
 import os
 import sys
 import traceback
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -22,6 +22,7 @@ os.chdir(PROJECT_DIR)
 sys.path.insert(0, str(PROJECT_DIR))
 
 from dotenv import load_dotenv
+
 load_dotenv(PROJECT_DIR / ".env")
 
 LOG_DIR = PROJECT_DIR / "logs"
@@ -216,7 +217,7 @@ def main():
         # Sunday weekly heartbeat (weekday() == 6) — proves watchdog itself is alive.
         if datetime.now(timezone.utc).weekday() == 6:
             notify_heartbeat(checked)
-            log.write(f"Sent GREEN heartbeat (Sunday)\n")
+            log.write("Sent GREEN heartbeat (Sunday)\n")
 
         log.write(f"OK: all {checked} collections fresh\n")
         sys.exit(0)

@@ -4,11 +4,13 @@ history from KuCoin Futures via CCXT.
 """
 
 import time
+from datetime import datetime, timedelta, timezone
+
 import ccxt
 import pandas as pd
-from datetime import datetime, timezone, timedelta
 
-from .config import SEED_WINDOW, PERP_SYMBOL_MAP
+from .config import PERP_SYMBOL_MAP, SEED_WINDOW
+from .retry import call_with_kucoin_retry
 
 # ---------------------------------------------------------------------------
 # Shared futures exchange instance (public endpoints only, no auth needed)
@@ -68,17 +70,19 @@ def fetch_perp_candles(
 
     while remaining > 0:
         batch_size = min(remaining, 200)  # KuCoin Futures max per request (not 500 like spot)
-        ohlcv = ex.fetch_ohlcv(ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size)
+        ohlcv = call_with_kucoin_retry(
+            ex.fetch_ohlcv, ccxt_symbol, ccxt_tf, since=cursor, limit=batch_size
+        )
         if not ohlcv:
             break
         for row in ohlcv:
-            ts_ms, o, h, l, c, v = row
+            ts_ms, o, h, low, c, v = row
             dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             all_rows.append({
                 "timestamp": dt,
                 "Open": float(o),
                 "High": float(h),
-                "Low": float(l),
+                "Low": float(low),
                 "Close": float(c),
                 "Volume": float(v),
             })
@@ -144,8 +148,8 @@ def fetch_funding_rate_history(
 
     while remaining > 0:
         fetch_limit = min(remaining, batch_size)
-        records = ex.fetch_funding_rate_history(
-            ccxt_symbol, since=cursor, limit=fetch_limit
+        records = call_with_kucoin_retry(
+            ex.fetch_funding_rate_history, ccxt_symbol, since=cursor, limit=fetch_limit
         )
         if not records:
             break

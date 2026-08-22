@@ -1,18 +1,43 @@
+# ---------------------------------------------------------------------------
+# Why these are pinned (audit 2026-08-22, rec #2 — DevOps, sev HIGH):
+#
+# This repo's indicator COLUMN NAMES are a declared public API (ADR-001,
+# ../docs/decisions/001-indicator-columns-as-public-api.md) shared with
+# Crypto_Research_Assistant. But `pandas-ta-classic` computes the VALUES
+# stored under those names — and `pandas`/`numpy` are the arithmetic
+# underneath it. A floating minor/patch version of any of the three can
+# silently change indicator values while the column names stay identical,
+# so ADR-001's "renamed columns need coordination" guard never fires and
+# nothing downstream notices the drift.
+#
+# This matters here specifically because the pin has to hold across FOUR
+# independent install surfaces that can each resolve a floating spec to a
+# different release on a different day: the local venv, the two
+# workflow_dispatch GitHub Actions workflows, and the Dockerfile's Cloud
+# Run fallback build. Exact `==` pins make all four reproduce the same
+# indicator values; `requirements.lock` (full `pip freeze` of a known-good
+# venv) is the reference to diff against if a bump is ever proposed.
+#
+# Do not loosen these to a range "for convenience" — that reopens exactly
+# the silent-drift path this pin closes. Bump deliberately, with a
+# before/after indicator-value diff, not via an unpinned reinstall.
+# ---------------------------------------------------------------------------
+
 # Core dependencies
-ccxt==4.5.40
-pandas
-pandas-ta-classic
-numpy
-pymongo
-python-dotenv
-requests
+ccxt==4.5.40          # v4.5.41 has a packaging bug — do not bump without checking upstream first
+pandas==3.0.2
+pandas-ta-classic==0.4.47
+numpy==2.4.4
+pymongo==4.16.0
+python-dotenv==1.2.2
+requests==2.33.1
 
 # HTTP / Flask (Cloud Run fallback)
-flask
-gunicorn
+flask==3.1.3
+gunicorn==25.3.0
 
 # MCP server (Claude Code integration)
-mcp
+mcp==1.27.0
 
 # Testing
-pytest
+pytest==9.0.2

@@ -9,21 +9,25 @@ and querying perpetual futures funding rates.
 import json
 import sys
 from datetime import datetime, timezone
+
 import pandas as pd
 from bson import ObjectId
-from pymongo import DESCENDING, ASCENDING
-
 from mcp.server.fastmcp import FastMCP
+from pymongo import ASCENDING, DESCENDING
 
 # Add project root to path so btc_tracker_mongodb is importable
 sys.path.insert(0, ".")
 
 from btc_tracker_mongodb.config import (
-    TOKENS, TIMEFRAMES, MARKET_TYPES,
-    get_collection_name, get_funding_collection_name,
-    METADATA_COLLECTION, TOKEN_METADATA_COLLECTION,
+    MARKET_TYPES,
+    METADATA_COLLECTION,
+    TIMEFRAMES,
+    TOKEN_METADATA_COLLECTION,
+    TOKENS,
+    get_collection_name,
+    get_funding_collection_name,
 )
-from btc_tracker_mongodb.db import get_collection, get_db, get_funding_collection, load_funding_rates
+from btc_tracker_mongodb.db import get_collection, get_db, load_funding_rates
 
 mcp = FastMCP("crypto-tracker")
 

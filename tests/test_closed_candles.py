@@ -19,11 +19,11 @@ import pandas as pd
 import pytest
 
 from btc_tracker_mongodb.pipeline import (
-    periods_behind,
     _drop_unclosed,
     _floor_timestamp,
     _last_closed_period,
     nan_anomalies,
+    periods_behind,
 )
 
 

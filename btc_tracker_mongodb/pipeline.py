@@ -2,19 +2,28 @@
 pipeline.py — Orchestrates the extract -> indicators -> load pipeline.
 """
 
-import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
-from .config import TOKENS, TIMEFRAMES, SLIDING_WINDOW, SEED_WINDOW
-from .db import (load_latest, load_all, get_latest_timestamp,
-                 bulk_upsert, bulk_upsert_chunked, ensure_indexes, upsert_indicator_glossary,
-                 upsert_token_metadata, bulk_upsert_funding, ensure_funding_indexes,
-                 get_funding_collection)
+import pandas as pd
+
+from .config import SEED_WINDOW, SLIDING_WINDOW, TIMEFRAMES, TOKENS
+from .db import (
+    bulk_upsert,
+    bulk_upsert_chunked,
+    bulk_upsert_funding,
+    ensure_funding_indexes,
+    ensure_indexes,
+    get_funding_collection,
+    get_latest_timestamp,
+    load_all,
+    load_latest,
+    upsert_indicator_glossary,
+    upsert_token_metadata,
+)
 from .extract import fetch_candles, fetch_seed_candles
-from .extract_perp import fetch_perp_candles, fetch_perp_seed_candles, fetch_funding_rate_history
+from .extract_perp import fetch_funding_rate_history, fetch_perp_candles, fetch_perp_seed_candles
 from .indicators import compute_all, get_numeric_cols
 from .sentiment import fetch_fear_greed
-
 
 _glossary_synced = False
 
@@ -418,7 +427,7 @@ def run_backfill(
     if not df_existing.empty:
         print(f"[backfill] Loaded {len(df_existing)} existing docs from MongoDB")
     else:
-        print(f"[backfill] No existing data in MongoDB")
+        print("[backfill] No existing data in MongoDB")
 
     # Step 3: Merge — existing OHLCV wins on duplicate timestamps
     if not df_existing.empty:
@@ -430,7 +439,7 @@ def run_backfill(
     print(f"[backfill] Merged dataset: {len(df_merged)} rows")
 
     # Step 4: Recompute all indicators
-    print(f"[backfill] Computing indicators...")
+    print("[backfill] Computing indicators...")
     df_merged = compute_all(df_merged, timeframe)
 
     # Step 5: Drop NaN warmup rows (excludes all-NaN columns from short-history tokens)
@@ -749,7 +758,7 @@ def run_perp_backfill(
 
     # Step 2: Backfill raw funding rates (separate collection)
     funding_since_ms = int(df_exchange.index.min().timestamp() * 1000)
-    print(f"[perp-backfill] Fetching funding rate history...")
+    print("[perp-backfill] Fetching funding rate history...")
     _fetch_and_store_funding(symbol, funding_since_ms, test, tag="perp-backfill", limit=100_000)
 
     # Step 3: Load all existing data (OHLCV only)
@@ -757,7 +766,7 @@ def run_perp_backfill(
     if not df_existing.empty:
         print(f"[perp-backfill] Loaded {len(df_existing)} existing docs from MongoDB")
     else:
-        print(f"[perp-backfill] No existing data in MongoDB")
+        print("[perp-backfill] No existing data in MongoDB")
 
     # Step 4: Merge — existing OHLCV wins on duplicate timestamps
     if not df_existing.empty:
@@ -769,7 +778,7 @@ def run_perp_backfill(
     print(f"[perp-backfill] Merged dataset: {len(df_merged)} rows")
 
     # Step 5: Recompute all indicators
-    print(f"[perp-backfill] Computing indicators...")
+    print("[perp-backfill] Computing indicators...")
     df_merged = compute_all(df_merged, timeframe)
 
     # Step 6: Drop NaN warmup rows (excludes all-NaN columns from short-history tokens)

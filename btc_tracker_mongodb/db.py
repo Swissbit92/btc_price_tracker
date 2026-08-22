@@ -4,11 +4,19 @@ db.py — MongoDB connection and CRUD operations.
 
 import os
 from datetime import datetime, timezone
-import pandas as pd
-from pymongo import MongoClient, UpdateOne, DESCENDING
-from dotenv import load_dotenv
 
-from .config import get_collection_name, get_funding_collection_name, get_db_name, SLIDING_WINDOW, METADATA_COLLECTION, FUNDING_METADATA_COLLECTION
+import pandas as pd
+from dotenv import load_dotenv
+from pymongo import DESCENDING, MongoClient, UpdateOne
+
+from .config import (
+    FUNDING_METADATA_COLLECTION,
+    METADATA_COLLECTION,
+    SLIDING_WINDOW,
+    get_collection_name,
+    get_db_name,
+    get_funding_collection_name,
+)
 
 load_dotenv()
 
@@ -247,7 +255,7 @@ def ensure_funding_indexes(symbol: str, test: bool = False):
 
 def upsert_token_metadata(test: bool = False):
     """Upsert per-token metadata and timeframe glossary into token_metadata collection."""
-    from .config import TOKEN_METADATA, TIMEFRAME_GLOSSARY, TOKEN_METADATA_COLLECTION
+    from .config import TIMEFRAME_GLOSSARY, TOKEN_METADATA, TOKEN_METADATA_COLLECTION
 
     db = get_db(test)
     coll = db[TOKEN_METADATA_COLLECTION]

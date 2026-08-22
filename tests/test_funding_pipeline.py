@@ -5,11 +5,8 @@ Tests for the funding rate pipeline fix:
 - Watchdog check_freshness: now includes funding_rate collections
 """
 
-from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch, call
-
-import pytest
-
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # _get_funding_since_ms
@@ -75,6 +72,7 @@ class TestFetchAndStoreFunding:
     @patch("btc_tracker_mongodb.pipeline.fetch_funding_rate_history")
     def test_stores_records_when_data_returned(self, mock_fetch, mock_upsert):
         import pandas as pd
+
         from btc_tracker_mongodb.pipeline import _fetch_and_store_funding
 
         ts = datetime(2026, 4, 25, 8, 0, tzinfo=timezone.utc)
@@ -90,6 +88,7 @@ class TestFetchAndStoreFunding:
     @patch("btc_tracker_mongodb.pipeline.fetch_funding_rate_history")
     def test_logs_when_empty(self, mock_fetch, capsys):
         import pandas as pd
+
         from btc_tracker_mongodb.pipeline import _fetch_and_store_funding
 
         mock_fetch.return_value = pd.DataFrame()
@@ -125,15 +124,17 @@ class TestWatchdogFundingCheck:
 
     def test_funding_stale_detected(self):
         """Funding rate stale check is now part of check_freshness coverage."""
-        import bin.run_watchdog as wdog
         import inspect
+
+        import bin.run_watchdog as wdog
         src = inspect.getsource(wdog.check_freshness)
         assert "get_funding_collection" in src
 
     def test_funding_check_increases_count(self):
         """Each token now contributes +1 funding check to the total checked count."""
-        import bin.run_watchdog as wdog
         import inspect
+
+        import bin.run_watchdog as wdog
         src = inspect.getsource(wdog.check_freshness)
         assert "36" in src
         assert "funding_rate" in src

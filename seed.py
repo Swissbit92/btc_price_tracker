@@ -10,8 +10,9 @@ Usage:
 """
 
 import argparse
-from btc_tracker_mongodb.config import TOKENS, TIMEFRAMES, MARKET_TYPES
-from btc_tracker_mongodb.pipeline import run_seed, run_seed_from_csv, run_seed_all
+
+from btc_tracker_mongodb.config import MARKET_TYPES, TIMEFRAMES
+from btc_tracker_mongodb.pipeline import run_seed, run_seed_all, run_seed_from_csv
 
 
 def main():

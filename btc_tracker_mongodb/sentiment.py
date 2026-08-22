@@ -7,7 +7,6 @@ Returns a daily sentiment score (0-100) and classification string.
 
 import requests
 
-
 FNG_URL = "https://api.alternative.me/fng/?limit=1&format=json"
 FNG_TIMEOUT = 10  # seconds
 

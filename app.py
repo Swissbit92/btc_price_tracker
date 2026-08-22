@@ -1,5 +1,6 @@
 # app.py
 from flask import Flask, jsonify
+
 from btc_tracker_mongodb.pipeline import run_update_all
 
 app = Flask(__name__)

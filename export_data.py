@@ -25,7 +25,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-from btc_tracker_mongodb.config import TOKENS, DB_NAME
+from btc_tracker_mongodb.config import DB_NAME, TOKENS
 
 load_dotenv()
 

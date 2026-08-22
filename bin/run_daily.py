@@ -7,8 +7,8 @@ Schedule: 01:05 UTC daily via com.eeva.tracker-daily launchd plist
 """
 
 import os
-import sys
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,10 +20,12 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 # Token count is derived from config (not hardcoded) so labels never drift on add/remove.
 from btc_tracker_mongodb.config import TOKENS
+
 N_TOKENS = len(TOKENS)
 
 # Load .env
 from dotenv import load_dotenv
+
 load_dotenv(PROJECT_DIR / ".env")
 
 VENV_PYTHON = str(PROJECT_DIR / "venv" / "bin" / "python")

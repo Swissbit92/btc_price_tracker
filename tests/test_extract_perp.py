@@ -1,16 +1,17 @@
 """Tests for btc_tracker_mongodb.extract_perp — perpetual futures data extraction."""
 
-import pytest
-import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
+from ccxt.base.errors import ExchangeError
 
 from btc_tracker_mongodb.extract_perp import (
     _normalize_perp_symbol,
-    fetch_perp_candles,
     fetch_funding_rate_history,
+    fetch_perp_candles,
 )
-
 
 # ---------------------------------------------------------------------------
 # _normalize_perp_symbol
@@ -297,3 +298,80 @@ class TestFetchFundingRateHistory:
         df = fetch_funding_rate_history("BTC-USDT", since_ms=1700000000000, limit=1)
 
         assert pd.isna(df["period_start"].iloc[0])
+
+
+# ---------------------------------------------------------------------------
+# Retry/backoff on KuCoin's misclassified 429000 rate-limit error
+# (audit 2026-08-22 rec #6 — previously extract_perp had no retry at all,
+# unlike extract.fetch_candles)
+# ---------------------------------------------------------------------------
+
+class TestFetchPerpCandlesRetry:
+    @patch("btc_tracker_mongodb.retry.time.sleep")
+    @patch("btc_tracker_mongodb.extract_perp._get_futures_exchange")
+    def test_recovers_from_transient_429(self, mock_get_ex, mock_sleep):
+        mock_ex = MagicMock()
+        mock_ex.fetch_ohlcv.side_effect = [
+            ExchangeError("429000 Too Many Requests"),
+            [[1700000000000, 35000.0, 35500.0, 34800.0, 35200.0, 100.5]],
+        ]
+        mock_get_ex.return_value = mock_ex
+
+        df = fetch_perp_candles("BTC-USDT", "1h", since_ms=1700000000000, limit=1)
+
+        assert len(df) == 1
+        assert mock_ex.fetch_ohlcv.call_count == 2
+        mock_sleep.assert_called_once_with(1)
+
+    @patch("btc_tracker_mongodb.retry.time.sleep")
+    @patch("btc_tracker_mongodb.extract_perp._get_futures_exchange")
+    def test_reraises_after_exhausting_retries(self, mock_get_ex, mock_sleep):
+        mock_ex = MagicMock()
+        mock_ex.fetch_ohlcv.side_effect = ExchangeError("429000 Too Many Requests")
+        mock_get_ex.return_value = mock_ex
+
+        with pytest.raises(ExchangeError):
+            fetch_perp_candles("BTC-USDT", "1h", since_ms=1700000000000, limit=1)
+
+        assert mock_ex.fetch_ohlcv.call_count == 3
+
+    @patch("btc_tracker_mongodb.extract_perp._get_futures_exchange")
+    def test_non_429_error_raises_immediately(self, mock_get_ex):
+        mock_ex = MagicMock()
+        mock_ex.fetch_ohlcv.side_effect = ExchangeError("400100 Bad Request")
+        mock_get_ex.return_value = mock_ex
+
+        with pytest.raises(ExchangeError):
+            fetch_perp_candles("BTC-USDT", "1h", since_ms=1700000000000, limit=1)
+
+        assert mock_ex.fetch_ohlcv.call_count == 1
+
+
+class TestFetchFundingRateHistoryRetry:
+    @patch("btc_tracker_mongodb.retry.time.sleep")
+    @patch("btc_tracker_mongodb.extract_perp._get_futures_exchange")
+    def test_recovers_from_transient_429(self, mock_get_ex, mock_sleep):
+        mock_ex = MagicMock()
+        mock_ex.fetch_funding_rate_history.side_effect = [
+            ExchangeError("429000 Too Many Requests"),
+            [_make_ccxt_funding_record(1700000000000)],
+        ]
+        mock_get_ex.return_value = mock_ex
+
+        df = fetch_funding_rate_history("BTC-USDT", since_ms=1700000000000, limit=1)
+
+        assert len(df) == 1
+        assert mock_ex.fetch_funding_rate_history.call_count == 2
+        mock_sleep.assert_called_once_with(1)
+
+    @patch("btc_tracker_mongodb.retry.time.sleep")
+    @patch("btc_tracker_mongodb.extract_perp._get_futures_exchange")
+    def test_reraises_after_exhausting_retries(self, mock_get_ex, mock_sleep):
+        mock_ex = MagicMock()
+        mock_ex.fetch_funding_rate_history.side_effect = ExchangeError("429000")
+        mock_get_ex.return_value = mock_ex
+
+        with pytest.raises(ExchangeError):
+            fetch_funding_rate_history("BTC-USDT", since_ms=1700000000000, limit=1)
+
+        assert mock_ex.fetch_funding_rate_history.call_count == 3

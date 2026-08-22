@@ -1,0 +1,21 @@
+# Tooling config only — this repo installs runtime deps via requirements.txt
+# (pinned, see the rationale comment there), not packaging metadata here.
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+# E501 (line-too-long) ignored repo-wide: the 85-indicator glossary (indicators.py) and
+# several long descriptive/Telegram-message strings predate this ruff adoption and aren't
+# worth reflowing as a side effect of adding CI. New code should still stay under 120 where
+# reasonable — this is a legacy-content exemption, not a license.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]  # local imports after monkeypatch setup are a standard pytest pattern
+"bin/*" = ["E402"]    # entrypoint scripts sys.path.insert() before importing the package
+# indicators.py computes the ADR-001 public-API column VALUES — deliberately left untouched
+# by this CI-adoption change (R10: no drive-by edits to that file). Pre-existing E731 lambda.
+"btc_tracker_mongodb/indicators.py" = ["E731"]
