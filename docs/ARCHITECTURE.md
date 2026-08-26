@@ -156,10 +156,10 @@ published_url: https://claude.ai/code/artifact/64858b08-77c5-4a12-92d9-43988e8c6
     {
       "id": "mongo",
       "label": "MongoDB",
-      "sub": "~110 collections \u00b7 btc_data",
+      "sub": "687 collections \u00b7 btc_data",
       "tech": "MongoDB 7 \u00b7 Docker",
       "kind": "store",
-      "note": "Around 110 collections. This repo is the only writer to the price ones."
+      "note": "687 collections: 368 *_price_data, 300 *_funding_rate_data, 19 other. This repo is the only writer to the price ones."
     },
     {
       "id": "cra",
@@ -624,7 +624,16 @@ re-run — upsert semantics, per-token error isolation, resumable.
 - `funding_rate_glossary`: per-token metadata (exchange, contract symbol, settlement schedule).
 - **Production timeframes:** daily + hourly (spot + perp), weekly (**spot only** — KuCoin Futures has no weekly). 4h not in production.
 - **Weekly bars open Thursday 00:00 UTC, not Monday.** KuCoin buckets weekly candles by epoch modulo and the Unix epoch was a Thursday, so every stored weekly timestamp satisfies `ts % 604800 == 0`. ccxt passes venue boundaries through unchanged and [deliberately never re-cuts them](https://github.com/ccxt/ccxt/issues/25046), so this is the exchange's convention, not ours — Binance and TradingView use Monday. Consumers wanting an ISO week must aggregate it themselves from `{token}_daily_price_data`. Assuming Monday here stalled every weekly update for three weeks in 2026; see [LESSONS_LEARNED.md](LESSONS_LEARNED.md).
-- **Total:** ~110 collections.
+- **Total:** **687 collections** in `btc_data`, measured 2026-08-26 — 368
+  `*_price_data`, 300 `*_funding_rate_data`, 19 other (glossaries and metadata),
+  across **300 distinct instruments**.
+- **The 17-token production set above is a subset, not the total.** Those six
+  collection families over 17 tokens come to roughly 102 collections; the
+  database holds 687 because this repo also writes the wider instrument
+  universe — equities, ETFs and commodities across all suffixes. The
+  long-standing "~110 collections" figure described the production subset and
+  was then read as the database total, which is the same scope confusion that
+  made "17 tokens" read as the tracker's whole footprint.
 
 Ecosystem collection naming contract: [../../docs/shared/mongodb_contract.md](../../docs/shared/mongodb_contract.md)
 
