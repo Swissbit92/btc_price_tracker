@@ -26,6 +26,8 @@ N_TOKENS = len(TOKENS)
 # Load .env
 from dotenv import load_dotenv
 
+from btc_tracker_mongodb.alerting import send_alert
+
 load_dotenv(PROJECT_DIR / ".env")
 
 VENV_PYTHON = str(PROJECT_DIR / "venv" / "bin" / "python")
@@ -50,32 +52,10 @@ def _send_telegram(message, photo_path=None):
     if not token or not chat_id:
         return
 
-    import requests
-    try:
-        if photo_path and Path(photo_path).is_file():
-            caption = message[:1024]
-            remainder = message[1024:] if len(message) > 1024 else ""
-            with open(photo_path, "rb") as f:
-                requests.post(
-                    f"https://api.telegram.org/bot{token}/sendPhoto",
-                    data={"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"},
-                    files={"photo": f},
-                    timeout=20,
-                )
-            if remainder:
-                requests.post(
-                    f"https://api.telegram.org/bot{token}/sendMessage",
-                    json={"chat_id": chat_id, "text": remainder, "parse_mode": "HTML"},
-                    timeout=20,
-                )
-        else:
-            requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
-                timeout=20,
-            )
-    except Exception:
-        pass  # Notification failure should never crash the pipeline
+    # Delivery, retry policy, the caption/remainder split and the "never raise"
+    # contract all live in btc_tracker_mongodb/alerting.py — one sender for the
+    # three entrypoints that each used to carry their own.
+    send_alert(message, photo_path, token=token, chat_id=chat_id)
 
 
 def notify_success(steps_passed, steps_total, duration, token_count):

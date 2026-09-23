@@ -26,6 +26,8 @@ N_TOKENS = len(TOKENS)
 # Load .env
 from dotenv import load_dotenv
 
+from btc_tracker_mongodb.alerting import send_alert
+
 load_dotenv(PROJECT_DIR / ".env")
 
 VENV_PYTHON = str(PROJECT_DIR / "venv" / "bin" / "python")
@@ -49,7 +51,6 @@ def notify_failure(detail):
     if not token or not chat_id:
         return
 
-    import requests
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     msg = (
         f"\U0001f6a8 Price Tracker Alert \U0001f6a8\n\n"
@@ -61,24 +62,11 @@ def notify_failure(detail):
         f"\U0001f527 Check logs for details\n"
         f"\U0001f525 #Crypto #Eeva #PriceTracker"
     )
-    try:
-        photo = str(HEADER_IMAGE) if HEADER_IMAGE.is_file() else None
-        if photo:
-            with open(photo, "rb") as f:
-                requests.post(
-                    f"https://api.telegram.org/bot{token}/sendPhoto",
-                    data={"chat_id": chat_id, "caption": msg[:1024], "parse_mode": "HTML"},
-                    files={"photo": f},
-                    timeout=20,
-                )
-        else:
-            requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"},
-                timeout=20,
-            )
-    except Exception:
-        pass
+    # Delivery, retry policy and the "never raise" contract live in
+    # btc_tracker_mongodb/alerting.py. This used to end in `except Exception:
+    # pass`, so one dropped connection lost the FAILURE alert entirely — the
+    # case where something has already gone wrong and you most need to hear it.
+    send_alert(msg, HEADER_IMAGE, token=token, chat_id=chat_id)
 
 
 # ── Docker/MongoDB readiness check ─────────────────────────

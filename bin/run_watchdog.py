@@ -23,6 +23,8 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from dotenv import load_dotenv
 
+from btc_tracker_mongodb.alerting import send_alert
+
 load_dotenv(PROJECT_DIR / ".env")
 
 LOG_DIR = PROJECT_DIR / "logs"
@@ -72,24 +74,11 @@ def _send_telegram(msg, photo_path=None):
     chat_id = os.getenv("TG_CHAT_ID")
     if not token or not chat_id:
         return False
-    import requests
-    try:
-        if photo_path and Path(photo_path).is_file():
-            with open(photo_path, "rb") as f:
-                requests.post(
-                    f"https://api.telegram.org/bot{token}/sendPhoto",
-                    data={"chat_id": chat_id, "caption": msg[:1024], "parse_mode": "HTML"},
-                    files={"photo": f}, timeout=20,
-                )
-        else:
-            requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"},
-                timeout=20,
-            )
-        return True
-    except Exception:
-        return False
+    # Was: return True whenever no exception was raised — so a 400 reported the
+    # stale-data alert as DELIVERED. The shared sender checks the response, and
+    # sends the tail of a long message instead of truncating it at 1024, which
+    # for this alert meant losing the end of the stale-collection list.
+    return send_alert(msg, photo_path, token=token, chat_id=chat_id)
 
 
 def notify_stale(stale_rows, checked):
