@@ -116,3 +116,53 @@ series reads `04-02 -> 05-14 -> 06-18 -> 07-16`.
 Warmup nulls are the documented contract, not a defect: `docs/ARCHITECTURE.md` states newer
 tokens carry null SMA_200/EMA_200 until they have the history. A NaN *after* a column has
 produced a value is a different thing entirely and still blocks.
+
+## Every Telegram alert goes through one sender that retries transient failures
+
+Status: active
+Statement: All Telegram delivery routes through `btc_tracker_mongodb/alerting.py:send_alert`, which retries transport failures and 429/5xx, does not retry 4xx, checks the HTTP response rather than only catching exceptions, and rebuilds an upload per attempt.
+Falsifiable: WHEN a file under `bin/`, `btc_tracker_mongodb/` or `tools/` other than `alerting.py` contains an `api.telegram.org` URL THE CHECK SHALL exit 1; it SHALL exit 2 if `alerting.py` is missing or no longer defines `RETRY_STATUSES`/`SEND_ATTEMPTS`/`send_alert`, or if no entrypoint imports it.
+Check: tools/checks/alerts_survive_a_transient_failure.sh
+
+Each of the three launchd entrypoints carried its own `_send_telegram`, and all three ended
+the same way:
+
+```python
+except Exception:
+    pass
+```
+
+One dropped TCP connection and the alert was gone, with nothing written anywhere. **These are
+the failure notifications** — the message that says the pipeline broke — so the case where the
+send fails is exactly the case where something has already gone wrong and you most need to
+hear about it. A pipeline that fails silently and then fails to say so is indistinguishable
+from one that ran fine.
+
+**Two of the three never looked at the HTTP response at all**, only at whether an exception
+was raised. `run_watchdog._send_telegram` therefore returned `True` after a 400, and its
+caller had no way to know the stale-data alert had been rejected rather than delivered. That
+is this ecosystem's most-repeated defect wearing another costume: a failure rendered as a
+success — the same shape as eeva-exec's `+0.00 funding` that was a failed API call, and the
+reader that pinged SUCCESS when it could not read positions.
+
+**Two silent truncations went with it.** Only `run_daily` sent the overflow past Telegram's
+1024-character caption limit; the other two cut the message and sent no remainder. For the
+watchdog that meant a long list of stale collections lost its tail while the alert still
+looked complete. The shared sender always sends the remainder.
+
+**Retry by kind, never by pessimism.** 5xx is the far side and 429 is us; both are answered by
+waiting. A 4xx is our own request and retrying it burns the rate limit to fail identically.
+The rule comes from eeva-sol, learned there from a Jupiter 400 that wrapped an upstream 503:
+read the failure before deciding it is transient.
+
+**The case a grep cannot see, and the test that does.** An upload must be REBUILT per attempt.
+A file handle read by attempt 1 is at EOF for attempt 2, so a retry reusing it uploads an
+**empty body** — which Telegram may accept, making the retry report success having sent
+nothing. Only `tests/test_alerting.py` can prove the two attempts carry identical bytes, which
+is why this check runs that file rather than only grepping.
+
+### Related
+
+- Same constraint, same week, in the sibling repos: `eeva-exec` INV-10, `eeva-dca` INV-1, and
+  `nephilim-ecosystem` INV-2. `eeva-sol` had it first, from 2026-08-20. The repos never import
+  each other, so the **rule** travels and the implementation does not.
